@@ -1,0 +1,19 @@
+referral.akaiaoon.dev {
+    reverse_proxy app:3000 {
+        header_up Host {host}
+        header_up X-Real-IP {remote}
+        header_up X-Forwarded-For {remote}
+        header_up X-Forwarded-Proto {scheme}
+    }
+    
+    header {
+        X-Content-Type-Options nosniff
+        X-Frame-Options DENY
+        X-XSS-Protection "1; mode=block"
+    }
+    
+    log {
+        output file /var/log/caddy/access.log
+        format json
+    }
+}

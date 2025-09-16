@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GitHub 추천 시스템</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f6f8fa;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .login-section {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .user-info {
+            display: flex;
+            align-items: center;
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 6px;
+        }
+        .avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            margin-right: 15px;
+        }
+        .recommend-form {
+            margin-bottom: 30px;
+        }
+        input[type="text"], textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #d1d5db;
+            border-radius: 4px;
+            font-size: 16px;
+            font-family: inherit;
+        }
+        textarea {
+            resize: vertical;
+            min-height: 60px;
+        }
+        button {
+            background: #2ea44f;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 10px;
+        }
+        button:hover {
+            background: #2c974b;
+        }
+        .logout-btn {
+            background: #d73a49;
+        }
+        .logout-btn:hover {
+            background: #cb2431;
+        }
+        .recommendations {
+            margin-top: 30px;
+        }
+        .recommender {
+            display: flex;
+            align-items: center;
+            padding: 10px;
+            border-bottom: 1px solid #e1e4e8;
+        }
+        .recommender:last-child {
+            border-bottom: none;
+        }
+        .recommender-avatar {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            margin-right: 10px;
+        }
+        .message {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .search-section {
+            margin-top: 30px;
+            padding-top: 30px;
+            border-top: 1px solid #e1e4e8;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>GitHub 추천 시스템</h1>
+
+        <div id="login-section" class="login-section">
+            <h2>로그인</h2>
+            <p>GitHub 계정으로 로그인하여 다른 개발자를 추천해보세요!</p>
+            <a href="/auth/github"><button>GitHub으로 로그인</button></a>
+        </div>
+
+        <div id="main-content" style="display: none;">
+            <div id="user-info" class="user-info">
+                <!-- User info will be populated here -->
+            </div>
+
+            <div class="recommend-form">
+                <h3>개발자 추천하기</h3>
+                <p>추천하고 싶은 GitHub Handle을 입력하세요:</p>
+                <input type="text" id="recommend-username" placeholder="예: octocat" required>
+                <br>
+                <p>추천사 (선택사항, 최대 500자):</p>
+                <textarea id="recommend-text" placeholder="이 개발자를 추천하는 이유를 간단히 적어주세요..." maxlength="500" rows="3"></textarea>
+                <br>
+                <button onclick="recommendUser()">추천하기</button>
+            </div>
+
+            <div id="message"></div>
+
+            <div class="search-section">
+                <h3>추천 조회하기</h3>
+                <p>특정 사용자를 추천한 사람들의 목록을 확인하세요:</p>
+                <input type="text" id="search-username" placeholder="GitHub 사용자명">
+                <br>
+                <button onclick="searchRecommendations()">조회하기</button>
+
+                <div id="recommendations-result" class="recommendations" style="display: none;">
+                    <h4 id="result-title"></h4>
+                    <div id="recommenders-list"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentUser = null;
+
+        // Check authentication status on page load
+        window.onload = function() {
+            checkAuthStatus();
+        };
+
+        async function checkAuthStatus() {
+            try {
+                const response = await fetch('/api/user');
+                if (response.ok) {
+                    currentUser = await response.json();
+                    showMainContent();
+                } else {
+                    showLoginSection();
+                }
+            } catch (error) {
+                console.error('Auth check failed:', error);
+                showLoginSection();
+            }
+        }
+
+        function showLoginSection() {
+            document.getElementById('login-section').style.display = 'block';
+            document.getElementById('main-content').style.display = 'none';
+        }
+
+        function showMainContent() {
+            document.getElementById('login-section').style.display = 'none';
+            document.getElementById('main-content').style.display = 'block';
+
+            const userInfo = document.getElementById('user-info');
+            userInfo.innerHTML = `
+                <img src="${currentUser.avatar_url || '/default-avatar.png'}" alt="Avatar" class="avatar">
+                <div>
+                    <strong>${currentUser.name || currentUser.username}</strong> (@${currentUser.username})
+                    <br>
+                    <button class="logout-btn" onclick="logout()">로그아웃</button>
+                </div>
+            `;
+        }
+
+        async function recommendUser() {
+            const username = document.getElementById('recommend-username').value.trim();
+            const recommendationText = document.getElementById('recommend-text').value.trim();
+
+            if (!username) {
+                showMessage('GitHub 사용자명을 입력해주세요.', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/recommend', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        recommendedUsername: username,
+                        recommendationText: recommendationText || null
+                    }),
+                    credentials: 'include'
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    showMessage('추천이 성공적으로 등록되었습니다!', 'success');
+                    document.getElementById('recommend-username').value = '';
+                    document.getElementById('recommend-text').value = '';
+                } else {
+                    showMessage(data.error || '추천 등록에 실패했습니다.', 'error');
+                }
+            } catch (error) {
+                console.error('Recommendation failed:', error);
+                showMessage('네트워크 오류가 발생했습니다.', 'error');
+            }
+        }
+
+        async function searchRecommendations() {
+            const username = document.getElementById('search-username').value.trim();
+            if (!username) {
+                showMessage('GitHub 사용자명을 입력해주세요.', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch(`/u/${username}`);
+                
+                if (response.ok) {
+                    displayRecommendationsSVG(username, response);
+                } else {
+                    showMessage('조회에 실패했습니다.', 'error');
+                }
+            } catch (error) {
+                console.error('Search failed:', error);
+                showMessage('네트워크 오류가 발생했습니다.', 'error');
+            }
+        }
+
+        async function displayRecommendationsSVG(username, response) {
+            const resultDiv = document.getElementById('recommendations-result');
+            const titleDiv = document.getElementById('result-title');
+            const listDiv = document.getElementById('recommenders-list');
+
+            titleDiv.textContent = `@${username}님을 추천한 사람들`;
+
+            try {
+                const svgText = await response.text();
+                listDiv.innerHTML = `
+                    <div style="text-align: center; margin: 20px 0;">
+                        ${svgText}
+                    </div>
+                `;
+            } catch (error) {
+                console.error('Error displaying SVG:', error);
+                listDiv.innerHTML = '<p>추천 정보를 표시할 수 없습니다.</p>';
+            }
+
+            resultDiv.style.display = 'block';
+        }
+
+        function showMessage(text, type) {
+            const messageDiv = document.getElementById('message');
+            messageDiv.innerHTML = `<div class="message ${type}">${text}</div>`;
+            setTimeout(() => {
+                messageDiv.innerHTML = '';
+            }, 5000);
+        }
+
+        async function logout() {
+            try {
+                await fetch('/logout');
+                location.reload();
+            } catch (error) {
+                console.error('Logout failed:', error);
+                location.reload();
+            }
+        }
+    </script>
+</body>
+</html>

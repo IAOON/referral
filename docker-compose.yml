@@ -1,0 +1,50 @@
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    environment:
+      - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID}
+      - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET}
+      - PORT=3000
+      - CALLBACK_URL=${CALLBACK_URL}
+      - AVATAR_ENABLE=${AVATAR_ENABLE:-true}
+      - AVATAR_TIMEOUT_MS=${AVATAR_TIMEOUT_MS:-5000}
+      - AVATAR_CONCURRENCY=${AVATAR_CONCURRENCY:-2}
+      - SVG_CACHE_TTL_MS=${SVG_CACHE_TTL_MS:-600000}
+      - NODE_ENV=${NODE_ENV:-production}
+    volumes:
+      - ./referrals.db:/app/referrals.db
+      - ./data:/app/data
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 3000 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+      - ./logs:/var/log/caddy
+    networks:
+      - app-network
+    depends_on:
+      app:
+        condition: service_healthy
+
+volumes:
+  caddy_data:
+  caddy_config:
+
+networks:
+  app-network:
+    driver: bridge
