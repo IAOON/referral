@@ -770,6 +770,26 @@ function generateErrorSVG(message) {
   </svg>`;
 }
 
+if (process.env.NODE_ENV === "development") {
+  app.get("/renderer-test", async (req, res) => {
+    const testRows = [
+      {
+        recommendation_text: `
+We are lucky to live in a glorious age that gives us everything we could ask for as a human race. What more could you need when you have meat covered in cheese nestled between bread as a complete meal.
+
+From smashed patties at Shake Shack to Glamburgers at Honky Tonk, there’s a little something for everyone. Some burgers are humble, and some are ostentatious, and you just have to try them all to figure out what you want.
+        `,
+        name: "Jaeyeol Lee",
+        username: "malkoG",
+        created_at: new Date().toISOString(),
+      },
+    ];
+
+    const svg = await generateRecommendationsSVG("IAOON", testRows);
+    res.send(svg);
+  });
+}
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok', time: new Date().toISOString() });
