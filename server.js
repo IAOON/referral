@@ -1,7 +1,8 @@
 const express = require('express');
 const session = require('express-session');
 const passport = require('passport');
-const GitHubStrategy = require('passport-github2').Strategy;
+const { Strategy: LocalStrategy } = require('passport-local');
+const { Strategy: GitHubStrategy } = require('passport-github2');
 const sqlite3 = require('sqlite3').verbose();
 const cors = require('cors');
 const https = require('https');
@@ -64,6 +65,7 @@ app.use(cors({
   credentials: true
 }));
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 app.use(express.static('public'));
 app.use(session({
   secret: process.env.SESSION_SECRET || 'SESSION_SECRET_EXAMPLE',
@@ -72,51 +74,50 @@ app.use(session({
   cookie: { secure: false } // Set to true in production with HTTPS
 }));
 
-// Passport setup
-if (process.env.GITHUB_CLIENT_ID) {
-  passport.use(
-    new GitHubStrategy(
-      {
-        clientID: process.env.GITHUB_CLIENT_ID,
-        clientSecret: process.env.GITHUB_CLIENT_SECRET,
-        callbackURL:
-          process.env.CALLBACK_URL ||
-          "http://localhost:3000/auth/github/callback",
-      },
-      function (accessToken, refreshToken, profile, done) {
-        // Upsert user without replacing the row to preserve the stable primary key
-        db.run(
-          `INSERT INTO users (github_id, username, name)
+// dev purpose only
+const isNoLogin = (process.env.GITHUB_CLIENT_ID === undefined)
+
+let passportStrategy;
+if (isNoLogin) {
+  const verify = (username, password, done) => {
+    return done(null, { id: 0, github_id: username, username: username });
+  };
+  passportStrategy = new LocalStrategy(verify);
+} else {
+  const verify = (accessToken, refreshToken, profile, done) => {
+    // Upsert user without replacing the row to preserve the stable primary key
+    db.run(
+      `INSERT INTO users (github_id, username, name)
        VALUES (?, ?, ?)
        ON CONFLICT(github_id) DO UPDATE SET
          username=excluded.username,
          name=excluded.name`,
-          [profile.id, profile.username, profile.displayName],
-          function (err) {
-            if (err) {
-              return done(err);
-            }
-            // Fetch the (stable) user id to keep downstream logic working
-            db.get(
-              `SELECT id FROM users WHERE LOWER(github_id) = ?`,
-              [profile.id],
-              (selErr, row) => {
-                if (selErr) {
-                  return done(selErr);
-                }
-                return done(null, {
-                  id: row?.id,
-                  github_id: profile.id,
-                  username: profile.username,
-                });
-              },
-            );
-          },
-        );
-      },
-    ),
+      [profile.id, profile.username, profile.displayName],
+      function(err) {
+        if (err) {
+          return done(err);
+        }
+        // Fetch the (stable) user id to keep downstream logic working
+        db.get(`SELECT id FROM users WHERE LOWER(github_id) = ?`, [profile.id], (selErr, row) => {
+          if (selErr) {
+            return done(selErr);
+          }
+          return done(null, { id: row?.id, github_id: profile.id, username: profile.username });
+        });
+      }
+    );
+  };
+  passportStrategy = new GitHubStrategy({
+      clientID: process.env.GITHUB_CLIENT_ID,
+      clientSecret: process.env.GITHUB_CLIENT_SECRET,
+      callbackURL: process.env.CALLBACK_URL || "http://localhost:3000/auth/github/callback"
+    },
+    verify,
   );
 }
+
+// Passport setup
+passport.use(passportStrategy);
 
 passport.serializeUser(function(user, done) {
   done(null, user);
@@ -145,9 +146,25 @@ app.get('/', (req, res) => {
   res.sendFile(__dirname + '/public/index.html');
 });
 
+if (isNoLogin) {
+  // Local-only routes
+  app.get('/local-login', (req, res) => {
+    res.sendFile(__dirname + '/public/local-login.html');
+  });
+
+  app.post('/login-local', passport.authenticate('local', {
+    successRedirect: '/',
+    failureRedirect: '/local-login',
+  }));
+}
+
 // Authentication routes
 app.get('/auth/github',
   function(req, res, next) {
+    if (isNoLogin) {
+      res.status(302).location('/local-login').send();
+      return;
+    }
     // Pass returnTo as state parameter to GitHub OAuth
     const state = req.query.returnTo || '/';
     passport.authenticate('github', { 
