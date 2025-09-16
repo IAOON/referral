@@ -73,35 +73,50 @@ app.use(session({
 }));
 
 // Passport setup
-passport.use(new GitHubStrategy({
-    clientID: process.env.GITHUB_CLIENT_ID,
-    clientSecret: process.env.GITHUB_CLIENT_SECRET,
-    callbackURL: process.env.CALLBACK_URL || "http://localhost:3000/auth/github/callback"
-  },
-  function(accessToken, refreshToken, profile, done) {
-    // Upsert user without replacing the row to preserve the stable primary key
-    db.run(
-      `INSERT INTO users (github_id, username, name)
+if (process.env.GITHUB_CLIENT_ID) {
+  passport.use(
+    new GitHubStrategy(
+      {
+        clientID: process.env.GITHUB_CLIENT_ID,
+        clientSecret: process.env.GITHUB_CLIENT_SECRET,
+        callbackURL:
+          process.env.CALLBACK_URL ||
+          "http://localhost:3000/auth/github/callback",
+      },
+      function (accessToken, refreshToken, profile, done) {
+        // Upsert user without replacing the row to preserve the stable primary key
+        db.run(
+          `INSERT INTO users (github_id, username, name)
        VALUES (?, ?, ?)
        ON CONFLICT(github_id) DO UPDATE SET
          username=excluded.username,
          name=excluded.name`,
-      [profile.id, profile.username, profile.displayName],
-      function(err) {
-        if (err) {
-          return done(err);
-        }
-        // Fetch the (stable) user id to keep downstream logic working
-        db.get(`SELECT id FROM users WHERE LOWER(github_id) = ?`, [profile.id], (selErr, row) => {
-          if (selErr) {
-            return done(selErr);
-          }
-          return done(null, { id: row?.id, github_id: profile.id, username: profile.username });
-        });
-      }
-    );
-  }
-));
+          [profile.id, profile.username, profile.displayName],
+          function (err) {
+            if (err) {
+              return done(err);
+            }
+            // Fetch the (stable) user id to keep downstream logic working
+            db.get(
+              `SELECT id FROM users WHERE LOWER(github_id) = ?`,
+              [profile.id],
+              (selErr, row) => {
+                if (selErr) {
+                  return done(selErr);
+                }
+                return done(null, {
+                  id: row?.id,
+                  github_id: profile.id,
+                  username: profile.username,
+                });
+              },
+            );
+          },
+        );
+      },
+    ),
+  );
+}
 
 passport.serializeUser(function(user, done) {
   done(null, user);
