@@ -407,8 +407,8 @@ async function generateRecommendationsSVG(username, recommenders) {
   const width = 400;
   const headerHeight = 80; // 타임스탬프를 위해 높이 증가
   const baseItemHeight = 80;
-  const textMaxLength = 35;
-  
+  const textMaxLength = 55;
+
   // Calculate dynamic height based on recommendation text lines
   let totalHeight = headerHeight + 20;
   for (const recommender of recommenders) {
