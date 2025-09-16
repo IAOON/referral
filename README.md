@@ -20,7 +20,7 @@ GitHub OAuth를 이용한 추천 시스템입니다. 사용자는 GitHub 계정�
 
 ![@IAOON's referrals list](https://referral.akaiaoon.dev/u/IAOON)
 
-![refer me a referrals Image(WIP)](https://referral.akaiaoon.dev/t/IAOON) 
+[refer me a referrals Image(WIP)](https://referral.akaiaoon.dev/t/IAOON) 
 
 ## 로컬 개발 환경 설정
 
