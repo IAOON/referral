@@ -14,7 +14,12 @@ GitHub OAuth를 이용한 추천 시스템입니다. 사용자는 GitHub 계정�
 - **Database**: SQLite
 - **Authentication**: GitHub OAuth (Passport.js)
 - **Frontend**: Vanilla JavaScript + HTML/CSS
-- **Deployment**: Docker + Docker Compose + Cloudflare Tunnel
+- **Deployment**: Docker + Docker Compose + Caddy
+
+## 실제 작동 중인 데모
+
+![@IAOON's referrals list](https://referral.akaiaoon.dev/u/IAOON)
+![refer me a referrals](https://referral.akaiaoon.dev/t/IAOON) 
 
 ## 로컬 개발 환경 설정
 
@@ -37,9 +42,6 @@ GitHub OAuth를 이용한 추천 시스템입니다. 사용자는 GitHub 계정�
 # GitHub OAuth Configuration
 GITHUB_CLIENT_ID=your_github_client_id_here
 GITHUB_CLIENT_SECRET=your_github_client_secret_here
-
-# Session Configuration
-SESSION_SECRET=your_random_session_secret_here
 
 # Server Configuration
 PORT=3000
@@ -69,14 +71,9 @@ npm run dev
 
 **중요**: `referrals.db` 파일이 없어도 자동으로 생성되므로 별도의 데이터베이스 설정이 필요하지 않습니다.
 
-### 2. Cloudflare Tunnel 설정
+### 2. Caddy 설정
 
-1. [Cloudflare Zero Trust](https://one.dash.cloudflare.com/)에 로그인
-2. "Access" → "Tunnels"로 이동
-3. "Create a tunnel" 클릭
-4. 터널 이름 입력 (예: github-referral)
-5. "Save tunnel" 클릭
-6. 설치 명령어에서 토큰 부분을 복사
+작성중...
 
 ### 3. 환경 변수 설정
 
@@ -118,12 +115,9 @@ docker-compose logs -f
 docker-compose down
 ```
 
-### 5. Cloudflare Tunnel 연결
+### (선택) 5. Cloudflare 연결
 
-Cloudflare 대시보드에서 터널을 설정할 때:
-- **Public hostname**: 원하는 도메인 (예: referral.yourdomain.com)
-- **Service**: HTTP
-- **URL**: `localhost:3000` (network_mode: host 사용)
+작성 중...
 
 ### 6. 데이터베이스 자동 초기화
 
@@ -182,12 +176,6 @@ CREATE TABLE recommendations (
   UNIQUE(recommender_id, recommended_username)
 );
 ```
-
-## 보안 고려사항
-
-- 프로덕션 환경에서는 HTTPS를 사용하세요
-- SESSION_SECRET은 강력한 랜덤 문자열로 설정하세요
-- 데이터베이스 파일은 백업하고 안전하게 보관하세요
 
 ## 라이선스
 
