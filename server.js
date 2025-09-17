@@ -604,62 +604,6 @@ function setCloudflareCacheHeaders(res, username, lastModified) {
   });
 }
 
-app.get('/api/recommendations/:username', async (req, res) => {
-  const { username } = req.params;
-  
-  console.log(`Generating SVG for ${username} at ${new Date().toISOString()}`);
-
-  db.all(`SELECT u.username, u.name, r.created_at, r.recommendation_text
-          FROM recommendations r
-          LEFT JOIN users u ON r.recommender_id = u.id
-          WHERE LOWER(r.recommended_username) = LOWER(?)
-          ORDER BY r.created_at DESC`,
-    [username], async (err, rows) => {
-    if (err) {
-      console.error('Database error for', username, ':', err);
-      return res.status(500).send(generateErrorSVG('Database error'));
-    }
-
-    try {
-      console.log(`Found ${rows.length} recommendations for ${username}`);
-      
-      // 가장 최근 추천 시간을 lastModified로 사용
-      const lastModified = rows.length > 0 ? new Date(rows[0].created_at).getTime() : Date.now();
-      
-      // 클라우드플레어 친화적 캐시 헤더 설정
-      setCloudflareCacheHeaders(res, username, lastModified);
-      
-      const svg = await generateRecommendationsSVG(username, rows);
-      res.send(svg);
-    } catch (error) {
-      console.error('Error generating SVG for', username, ':', error);
-      res.status(500).send(generateErrorSVG('Failed to generate SVG'));
-    }
-  });
-
-});
-
-// Keep JSON API for programmatic access
-app.get('/api/recommendations/:username/json', (req, res) => {
-  const { username } = req.params;
-
-  db.all(`SELECT u.username, u.name, r.created_at, r.recommendation_text
-          FROM recommendations r
-          LEFT JOIN users u ON r.recommender_id = u.id
-          WHERE LOWER(r.recommended_username) = LOWER(?)
-          ORDER BY r.created_at DESC`,
-    [username], (err, rows) => {
-    if (err) {
-      return res.status(500).json({ error: 'Database error' });
-    }
-
-    res.json({
-      username: username,
-      recommenders: rows
-    });
-  });
-});
-
 // SVG route for /u/:username with Cloudflare-friendly caching
 app.get('/u/:username', async (req, res) => {
   const { username } = req.params;
