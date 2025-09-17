@@ -73,35 +73,50 @@ app.use(session({
 }));
 
 // Passport setup
-passport.use(new GitHubStrategy({
-    clientID: process.env.GITHUB_CLIENT_ID,
-    clientSecret: process.env.GITHUB_CLIENT_SECRET,
-    callbackURL: process.env.CALLBACK_URL || "http://localhost:3000/auth/github/callback"
-  },
-  function(accessToken, refreshToken, profile, done) {
-    // Upsert user without replacing the row to preserve the stable primary key
-    db.run(
-      `INSERT INTO users (github_id, username, name)
+if (process.env.GITHUB_CLIENT_ID) {
+  passport.use(
+    new GitHubStrategy(
+      {
+        clientID: process.env.GITHUB_CLIENT_ID,
+        clientSecret: process.env.GITHUB_CLIENT_SECRET,
+        callbackURL:
+          process.env.CALLBACK_URL ||
+          "http://localhost:3000/auth/github/callback",
+      },
+      function (accessToken, refreshToken, profile, done) {
+        // Upsert user without replacing the row to preserve the stable primary key
+        db.run(
+          `INSERT INTO users (github_id, username, name)
        VALUES (?, ?, ?)
        ON CONFLICT(github_id) DO UPDATE SET
          username=excluded.username,
          name=excluded.name`,
-      [profile.id, profile.username, profile.displayName],
-      function(err) {
-        if (err) {
-          return done(err);
-        }
-        // Fetch the (stable) user id to keep downstream logic working
-        db.get(`SELECT id FROM users WHERE LOWER(github_id) = ?`, [profile.id], (selErr, row) => {
-          if (selErr) {
-            return done(selErr);
-          }
-          return done(null, { id: row?.id, github_id: profile.id, username: profile.username });
-        });
-      }
-    );
-  }
-));
+          [profile.id, profile.username, profile.displayName],
+          function (err) {
+            if (err) {
+              return done(err);
+            }
+            // Fetch the (stable) user id to keep downstream logic working
+            db.get(
+              `SELECT id FROM users WHERE LOWER(github_id) = ?`,
+              [profile.id],
+              (selErr, row) => {
+                if (selErr) {
+                  return done(selErr);
+                }
+                return done(null, {
+                  id: row?.id,
+                  github_id: profile.id,
+                  username: profile.username,
+                });
+              },
+            );
+          },
+        );
+      },
+    ),
+  );
+}
 
 passport.serializeUser(function(user, done) {
   done(null, user);
@@ -392,8 +407,8 @@ async function generateRecommendationsSVG(username, recommenders) {
   const width = 400;
   const headerHeight = 80; // 타임스탬프를 위해 높이 증가
   const baseItemHeight = 80;
-  const textMaxLength = 35;
-  
+  const textMaxLength = 55;
+
   // Calculate dynamic height based on recommendation text lines
   let totalHeight = headerHeight + 20;
   for (const recommender of recommenders) {
@@ -753,6 +768,26 @@ function generateErrorSVG(message) {
     <rect width="400" height="100" rx="6" class="bg"/>
     <text x="20" y="30" class="error">Error: ${message}</text>
   </svg>`;
+}
+
+if (process.env.NODE_ENV === "development") {
+  app.get("/renderer-test", async (req, res) => {
+    const testRows = [
+      {
+        recommendation_text: `
+We are lucky to live in a glorious age that gives us everything we could ask for as a human race. What more could you need when you have meat covered in cheese nestled between bread as a complete meal.
+
+From smashed patties at Shake Shack to Glamburgers at Honky Tonk, there’s a little something for everyone. Some burgers are humble, and some are ostentatious, and you just have to try them all to figure out what you want.
+        `,
+        name: "Jaeyeol Lee",
+        username: "malkoG",
+        created_at: new Date().toISOString(),
+      },
+    ];
+
+    const svg = await generateRecommendationsSVG("IAOON", testRows);
+    res.send(svg);
+  });
 }
 
 // Health check endpoint
