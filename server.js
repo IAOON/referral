@@ -288,8 +288,8 @@ function fetchAvatarAsBase64(avatarUrl, maxRedirects = 5) {
       reject(err);
     });
     
-    // Set timeout
-    request.setTimeout(10000, () => {
+    // Set timeout using environment variable
+    request.setTimeout(avatarTimeout, () => {
       request.destroy();
       reject(new Error('Request timeout'));
     });
