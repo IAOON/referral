@@ -235,6 +235,8 @@ function fetchAvatarAsBase64(avatarUrl, maxRedirects = 5) {
     const url = new URL(avatarUrl);
     const client = url.protocol === 'https:' ? https : http;
     
+    const avatarTimeout = parseInt(process.env.AVATAR_TIMEOUT_MS) || 5000;
+    
     const options = {
       hostname: url.hostname,
       port: url.port || (url.protocol === 'https:' ? 443 : 80),
@@ -244,7 +246,7 @@ function fetchAvatarAsBase64(avatarUrl, maxRedirects = 5) {
         'User-Agent': 'Mozilla/5.0 (compatible; ReferralBot/1.0)',
         'Accept': 'image/*'
       },
-      timeout: parseInt(process.env.AVATAR_TIMEOUT_MS) || 5000
+      timeout: avatarTimeout
     };
     
     const request = client.request(options, (response) => {
@@ -571,6 +573,28 @@ async function generateRecommendationsSVG(username, recommenders) {
 }
 
 
+// Check if client has cached version (304 Not Modified)
+function checkCacheHeaders(req, username, lastModified) {
+  const etag = `"${username}-${lastModified}"`;
+  const lastModifiedDate = new Date(lastModified).toUTCString();
+  
+  // Check If-None-Match header
+  if (req.headers['if-none-match'] === etag) {
+    return true;
+  }
+  
+  // Check If-Modified-Since header
+  if (req.headers['if-modified-since']) {
+    const clientModifiedSince = new Date(req.headers['if-modified-since']);
+    const serverLastModified = new Date(lastModified);
+    if (clientModifiedSince >= serverLastModified) {
+      return true;
+    }
+  }
+  
+  return false;
+}
+
 // Set Cloudflare-friendly cache headers for SVG responses
 function setCloudflareCacheHeaders(res, username, lastModified) {
   const ttlSeconds = 300; // 5분 TTL
@@ -584,9 +608,7 @@ function setCloudflareCacheHeaders(res, username, lastModified) {
     'Surrogate-Control': `max-age=${ttlSeconds}`,
     // ETag으로 변경 감지
     'ETag': etag,
-    'Last-Modified': new Date(lastModified).toUTCString(),
-    // 클라우드플레어 특화 헤더
-    'CF-Cache-Status': 'HIT' // 또는 MISS
+    'Last-Modified': new Date(lastModified).toUTCString()
   });
 }
 
@@ -600,7 +622,15 @@ app.get('/u/:username', async (req, res) => {
   // 1. 메모리 캐시 확인 (보조 캐시로 사용)
   const cached = svgCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) {
-    console.log(`[${username}] Memory cache HIT - serving from cache`);
+    console.log(`[${username}] Memory cache HIT - checking client cache`);
+    
+    // 304 Not Modified 체크
+    if (checkCacheHeaders(req, username, cached.lastModified)) {
+      console.log(`[${username}] Client has cached version - returning 304`);
+      return res.status(304).end();
+    }
+    
+    console.log(`[${username}] Serving from memory cache`);
     // 클라우드플레어 친화적 헤더 설정
     setCloudflareCacheHeaders(res, username, cached.lastModified);
     return res.send(cached.svg);
@@ -611,6 +641,13 @@ app.get('/u/:username', async (req, res) => {
     console.log(`[${username}] Request already in progress - waiting for result`);
     try {
       const result = await pendingRequests.get(cacheKey);
+      
+      // 304 Not Modified 체크
+      if (checkCacheHeaders(req, username, result.lastModified)) {
+        console.log(`[${username}] Client has cached version - returning 304`);
+        return res.status(304).end();
+      }
+      
       setCloudflareCacheHeaders(res, username, result.lastModified);
       return res.send(result.svg);
     } catch (error) {
@@ -633,6 +670,12 @@ app.get('/u/:username', async (req, res) => {
       expiresAt: Date.now() + 5 * 60 * 1000 
     });
     
+    // 304 Not Modified 체크
+    if (checkCacheHeaders(req, username, result.lastModified)) {
+      console.log(`[${username}] Client has cached version - returning 304`);
+      return res.status(304).end();
+    }
+    
     // 클라우드플레어 친화적 헤더 설정
     setCloudflareCacheHeaders(res, username, result.lastModified);
     res.send(result.svg);
@@ -651,7 +694,7 @@ async function generateSVGForUserWithMetadata(username) {
     db.all(`SELECT u.username, u.name, r.created_at, r.recommendation_text
             FROM recommendations r
             LEFT JOIN users u ON r.recommender_id = u.id
-            WHERE r.recommended_username = ?
+            WHERE LOWER(r.recommended_username) = LOWER(?)
             ORDER BY r.created_at DESC`,
       [username], async (err, rows) => {
       if (err) {
