@@ -51,7 +51,27 @@ const isNoLogin = (process.env.GITHUB_CLIENT_ID === undefined)
 let passportStrategy;
 if (isNoLogin) {
   const verify = (username, password, done) => {
-    return done(null, { id: 0, github_id: username, username: username });
+    // Upsert user to ensure they exist in the database
+    db.run(
+      `INSERT INTO users (github_id, username, name)
+       VALUES (?, ?, ?)
+       ON CONFLICT(github_id) DO UPDATE SET
+         username=excluded.username,
+         name=excluded.name`,
+      [username, username, username],
+      function(err) {
+        if (err) {
+          return done(err);
+        }
+        // Get the user ID after upsert
+        db.get('SELECT id FROM users WHERE github_id = ?', [username], (err, user) => {
+          if (err) {
+            return done(err);
+          }
+          return done(null, { id: user.id, github_id: username, username: username });
+        });
+      }
+    );
   };
   passportStrategy = new LocalStrategy(verify);
 } else {
@@ -101,16 +121,6 @@ passport.deserializeUser(function(user, done) {
 app.use(passport.initialize());
 app.use(passport.session());
 
-// Cloudflare-friendly caching middleware for SVG routes
-app.use('/api/recommendations', (req, res, next) => {
-  // 클라우드플레어가 캐시할 수 있도록 허용 (5분 TTL)
-  res.set({
-    'Cache-Control': 'public, max-age=300, s-maxage=300',
-    'CDN-Cache-Control': 'max-age=300',
-    'Surrogate-Control': 'max-age=300'
-  });
-  next();
-});
 
 // Routes
 app.get('/', (req, res) => {
@@ -145,7 +155,7 @@ app.get('/auth/github',
   });
 
 app.get('/auth/github/callback',
-  passport.authenticate('github', { failureRedirect: '/login' }),
+  passport.authenticate('github', { failureRedirect: '/' }),
   function(req, res) {
     // Redirect to state parameter (which contains returnTo URL)
     const returnTo = req.query.state || '/';
@@ -185,8 +195,8 @@ app.post('/api/recommend', (req, res) => {
 
   // Check if user already recommended this person
   db.get(`SELECT id FROM recommendations
-          WHERE recommender_id = (SELECT id FROM users WHERE LOWER(github_id) = ?)
-          AND LOWER(recommended_username) = LOWER(?)`,
+          WHERE recommender_id = (SELECT id FROM users WHERE github_id = ?)
+          AND recommended_username = ?`,
     [req.user.github_id, recommendedUsername], (err, row) => {
     if (err) {
       return res.status(500).json({ error: 'Database error' });
@@ -233,7 +243,8 @@ function fetchAvatarAsBase64(avatarUrl, maxRedirects = 5) {
       headers: {
         'User-Agent': 'Mozilla/5.0 (compatible; ReferralBot/1.0)',
         'Accept': 'image/*'
-      }
+      },
+      timeout: parseInt(process.env.AVATAR_TIMEOUT_MS) || 5000
     };
     
     const request = client.request(options, (response) => {
@@ -559,19 +570,6 @@ async function generateRecommendationsSVG(username, recommenders) {
   return svg;
 }
 
-// 클라우드플레어 친화적 캐시 헤더
-function setCloudflareCacheHeaders(res, ttlSeconds = 300) {
-  res.set({
-    'Content-Type': 'image/svg+xml; charset=utf-8',
-    // 클라우드플레어가 이해할 수 있는 캐시 헤더
-    'Cache-Control': `public, max-age=${ttlSeconds}, s-maxage=${ttlSeconds}`,
-    'CDN-Cache-Control': `max-age=${ttlSeconds}`,
-    'Surrogate-Control': `max-age=${ttlSeconds}`,
-    // ETag으로 변경 감지
-    'ETag': `"${username}-${lastModified}"`,
-    'Last-Modified': new Date(lastModified).toUTCString(),
-  });
-}
 
 // Set Cloudflare-friendly cache headers for SVG responses
 function setCloudflareCacheHeaders(res, username, lastModified) {
@@ -653,7 +651,7 @@ async function generateSVGForUserWithMetadata(username) {
     db.all(`SELECT u.username, u.name, r.created_at, r.recommendation_text
             FROM recommendations r
             LEFT JOIN users u ON r.recommender_id = u.id
-            WHERE LOWER(r.recommended_username) = LOWER(?)
+            WHERE r.recommended_username = ?
             ORDER BY r.created_at DESC`,
       [username], async (err, rows) => {
       if (err) {
