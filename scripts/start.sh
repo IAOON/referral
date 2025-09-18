@@ -68,11 +68,31 @@ else
     echo "Running database migrations..."
     
     # Run migrations for existing databases
-    sqlite3 "$DB_PATH" <<EOF
--- Enable foreign key constraints
+    sqlite3 "$DB_PATH" <<'EOF'
 PRAGMA foreign_keys = ON;
+PRAGMA journal_mode = WAL;
+PRAGMA synchronous = NORMAL;
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    github_id INTEGER UNIQUE,
+    username TEXT UNIQUE,
+    name TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS recommendations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    recommender_id INTEGER,
+    recommended_username TEXT,
+    recommendation_text TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (recommender_id) REFERENCES users(id) ON UPDATE CASCADE ON DELETE CASCADE,
+    UNIQUE(recommender_id, recommended_username)
+);
+CREATE INDEX IF NOT EXISTS idx_recommendations_recommended_username ON recommendations(recommended_username);
+CREATE INDEX IF NOT EXISTS idx_recommendations_recommender_id ON recommendations(recommender_id);
+CREATE INDEX IF NOT EXISTS idx_users_github_id ON users(github_id);
+CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
 EOF
-
     # Check if recommendation_text column exists
     HAS_RECOMMENDATION_TEXT=$(sqlite3 "$DB_PATH" "PRAGMA table_info(recommendations);" | grep -c "recommendation_text" || echo "0")
     
