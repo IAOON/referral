@@ -26,38 +26,8 @@ const db = new sqlite3.Database('./referrals.db', (err) => {
     console.log('Connected to the SQLite database.');
     // Enforce foreign key constraints to protect referential integrity
     db.run('PRAGMA foreign_keys = ON');
-    initDatabase();
   }
 });
-
-function initDatabase() {
-  db.run(`CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    github_id INTEGER UNIQUE,
-    username TEXT UNIQUE,
-    name TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  )`);
-
-  db.run(`CREATE TABLE IF NOT EXISTS recommendations (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    recommender_id INTEGER,
-    recommended_username TEXT,
-    recommendation_text TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (recommender_id) REFERENCES users(id) ON UPDATE CASCADE ON DELETE CASCADE,
-    UNIQUE(recommender_id, recommended_username)
-  )`);
-
-  // Add recommendation_text column if it doesn't exist (for existing databases)
-  db.run(`ALTER TABLE recommendations ADD COLUMN recommendation_text TEXT`, (err) => {
-    if (err && !err.message.includes('duplicate column name')) {
-      console.log('recommendation_text column already exists or error:', err.message);
-    } else if (!err) {
-      console.log('Added recommendation_text column to recommendations table');
-    }
-  });
-}
 
 // Middleware
 app.use(cors({
