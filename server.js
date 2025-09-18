@@ -45,11 +45,21 @@ app.use(session({
   cookie: { secure: false } // Set to true in production with HTTPS
 }));
 
-// dev purpose only
+// dev purpose only - 프로덕션에서는 비활성화
 const isNoLogin = (process.env.GITHUB_CLIENT_ID === undefined)
+const isProduction = (process.env.NODE_ENV === 'production')
+
+// 프로덕션에서 로컬 로그인 방지
+if (isNoLogin && isProduction) {
+  console.error('ERROR: Local login is not allowed in production environment!');
+  console.error('Please set GITHUB_CLIENT_ID environment variable.');
+  process.exit(1);
+}
 
 let passportStrategy;
 if (isNoLogin) {
+  console.warn('WARNING: Using local login strategy. This should only be used in development!');
+  
   const verify = (username, password, done) => {
     // Upsert user to ensure they exist in the database
     db.run(
@@ -63,8 +73,8 @@ if (isNoLogin) {
         if (err) {
           return done(err);
         }
-        // Get the user ID after upsert
-        db.get('SELECT id FROM users WHERE github_id = ?', [username], (err, user) => {
+        // Get the user ID after upsert - 대소문자 정규화
+        db.get('SELECT id FROM users WHERE LOWER(github_id) = LOWER(?)', [username], (err, user) => {
           if (err) {
             return done(err);
           }
@@ -195,7 +205,7 @@ app.post('/api/recommend', (req, res) => {
 
   // Check if user already recommended this person
   db.get(`SELECT id FROM recommendations
-          WHERE recommender_id = (SELECT id FROM users WHERE github_id = ?)
+          WHERE recommender_id = (SELECT id FROM users WHERE LOWER(github_id) = LOWER(?))
           AND recommended_username = ?`,
     [req.user.github_id, recommendedUsername], (err, row) => {
     if (err) {
@@ -208,7 +218,7 @@ app.post('/api/recommend', (req, res) => {
 
     // Add recommendation
     db.run(`INSERT INTO recommendations (recommender_id, recommended_username, recommendation_text)
-            VALUES ((SELECT id FROM users WHERE LOWER(github_id) = ?), ?, ?)`,
+            VALUES ((SELECT id FROM users WHERE LOWER(github_id) = LOWER(?)), ?, ?)`,
       [req.user.github_id, recommendedUsername, recommendationText || null], function(err) {
       if (err) {
         return res.status(500).json({ error: 'Failed to save recommendation' });
