@@ -403,6 +403,19 @@ function splitTextIntoLines(text, maxLength) {
   return result;
 }
 
+// XML/SVG 이스케이프 함수
+function escapeXml(unsafe) {
+  if (typeof unsafe !== 'string') {
+    return '';
+  }
+  return unsafe
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 // Function to generate SVG badge
 async function generateRecommendationsSVG(username, recommenders) {
   const width = 400;
@@ -478,8 +491,8 @@ async function generateRecommendationsSVG(username, recommenders) {
     <rect width="${width}" height="${height}" rx="6" class="bg"/>
 
     <!-- Header with timestamp -->
-    <text x="20" y="25" class="header">Endorsements for @${username}</text>
-    <text x="20" y="45" class="date" opacity="0.7">Generated: ${new Date().toLocaleString()}</text>`;
+    <text x="20" y="25" class="header">Endorsements for @${escapeXml(username)}</text>
+    <text x="20" y="45" class="date" opacity="0.7">Generated: ${escapeXml(new Date().toLocaleString())}</text>`;
 
   // Add recommendation items
   currentY = headerHeight + 20;
@@ -522,12 +535,12 @@ async function generateRecommendationsSVG(username, recommenders) {
     const displayName = recommender.name || recommender.username || 'Unknown User';
     const truncatedName = displayName.length > 20 ? displayName.substring(0, 17) + '...' : displayName;
 
-    svg += `<text x="${20 + avatarSize + 15}" y="${y - 8}" class="name">${truncatedName}</text>`;
-    svg += `<text x="${20 + avatarSize + 15}" y="${y + 8}" class="username">@${username}</text>`;
+    svg += `<text x="${20 + avatarSize + 15}" y="${y - 8}" class="name">${escapeXml(truncatedName)}</text>`;
+    svg += `<text x="${20 + avatarSize + 15}" y="${y + 8}" class="username">@${escapeXml(username)}</text>`;
 
     // Date
     const date = new Date(recommender.created_at).toLocaleDateString('ko-KR');
-    svg += `<text x="${width - 20}" y="${y - 8}" text-anchor="end" class="date">${date}</text>`;
+    svg += `<text x="${width - 20}" y="${y - 8}" text-anchor="end" class="date">${escapeXml(date)}</text>`;
 
     // Recommendation text (multiline support)
     if (recommender.recommendation_text) {
@@ -560,7 +573,7 @@ async function generateRecommendationsSVG(username, recommenders) {
           }
         }
         
-        svg += `<text x="${20 + avatarSize + 15}" y="${lineY}" class="text">${displayText}</text>`;
+        svg += `<text x="${20 + avatarSize + 15}" y="${lineY}" class="text">${escapeXml(displayText)}</text>`;
       });
     }
     
