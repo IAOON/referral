@@ -62,7 +62,7 @@ if (isNoLogin) {
        ON CONFLICT(github_id) DO UPDATE SET
          username=excluded.username,
          name=excluded.name`,
-      [profile.id, profile.username, profile.displayName],
+      [profile.id, profile.username, profile.displayName || profile.name || profile.username || 'Unknown User'],
       function(err) {
         if (err) {
           return done(err);
