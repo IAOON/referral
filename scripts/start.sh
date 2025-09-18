@@ -1,13 +1,18 @@
 #!/bin/sh
 
+# Enable strict error handling
+set -eu
+
 # Database initialization and migration script
 # This script creates the SQLite database and tables if they don't exist
 # Also handles database migrations for existing databases
 
-DB_PATH="/app/referrals.db"
-DATA_DIR="/app/data"
+DATA_DIR="${REFERRALS_DATA_DIR:-/app/data}"
+DB_PATH="${REFERRALS_DB_PATH:-$DATA_DIR/referrals.db}"
 
 echo "Starting database initialization and migration..."
+echo "DATA_DIR: $DATA_DIR"
+echo "DB_PATH: $DB_PATH"
 
 # Create data directory if it doesn't exist
 mkdir -p "$DATA_DIR"
@@ -23,6 +28,8 @@ if [ ! -f "$DB_PATH" ]; then
     sqlite3 "$DB_PATH" <<EOF
 -- Enable foreign key constraints
 PRAGMA foreign_keys = ON;
+PRAGMA journal_mode = WAL;
+PRAGMA synchronous = NORMAL;
 
 -- Create users table
 CREATE TABLE IF NOT EXISTS users (
@@ -67,11 +74,12 @@ else
     echo "Database file already exists at: $DB_PATH"
     echo "Running database migrations..."
     
-    # Run migrations for existing databases
+    # Run migrations for existing databases in a transaction
     sqlite3 "$DB_PATH" <<'EOF'
 PRAGMA foreign_keys = ON;
 PRAGMA journal_mode = WAL;
 PRAGMA synchronous = NORMAL;
+BEGIN IMMEDIATE;
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     github_id INTEGER UNIQUE,
@@ -92,9 +100,10 @@ CREATE INDEX IF NOT EXISTS idx_recommendations_recommended_username ON recommend
 CREATE INDEX IF NOT EXISTS idx_recommendations_recommender_id ON recommendations(recommender_id);
 CREATE INDEX IF NOT EXISTS idx_users_github_id ON users(github_id);
 CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
+COMMIT;
 EOF
     # Check if recommendation_text column exists
-    HAS_RECOMMENDATION_TEXT=$(sqlite3 "$DB_PATH" "PRAGMA table_info(recommendations);" | grep -c "recommendation_text" || echo "0")
+    HAS_RECOMMENDATION_TEXT=$(sqlite3 "$DB_PATH" "PRAGMA table_info(recommendations);" | awk -F'|' '$2 == "recommendation_text" {print $2}' | wc -l)
     
     if [ "$HAS_RECOMMENDATION_TEXT" -eq 0 ]; then
         echo "Adding recommendation_text column..."
@@ -117,9 +126,18 @@ EOF
     fi
 fi
 
-# Set proper permissions
-chmod 664 "$DB_PATH"
-chmod 755 "$DATA_DIR"
+# Set proper permissions and ownership
+# Get the current user (should be the same as the app user in container)
+CURRENT_USER=$(whoami)
+CURRENT_GROUP=$(id -gn)
+
+# Set ownership to current user
+chown "$CURRENT_USER:$CURRENT_GROUP" "$DB_PATH" 2>/dev/null || true
+chown -R "$CURRENT_USER:$CURRENT_GROUP" "$DATA_DIR" 2>/dev/null || true
+
+# Set restrictive permissions for security
+chmod 660 "$DB_PATH"  # Database file: read/write for owner and group only
+chmod 770 "$DATA_DIR" # Data directory: read/write/execute for owner and group only
 
 echo "Database initialization and migration completed!"
 

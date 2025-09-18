@@ -19,7 +19,9 @@ const pendingRequests = new Map(); // username -> Promise<svg>
 const svgCache = new Map(); // username -> { svg: string, expiresAt: number }
 
 // Database setup
-const db = new sqlite3.Database('./referrals.db', (err) => {
+const dataDir = process.env.REFERRALS_DATA_DIR || '/app/data';
+const dbPath = process.env.REFERRALS_DB_PATH || `${dataDir}/referrals.db`;
+const db = new sqlite3.Database(dbPath, (err) => {
   if (err) {
     console.error('Error opening database:', err.message);
   } else {
