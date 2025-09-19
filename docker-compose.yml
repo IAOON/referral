@@ -7,13 +7,14 @@ services:
       - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET}
       - PORT=3000
       - CALLBACK_URL=${CALLBACK_URL}
+      - REFERRALS_DATA_DIR=${REFERRALS_DATA_DIR:-/app/data}
+      - REFERRALS_DB_PATH=${REFERRALS_DB_PATH:-/app/data/referrals.db}
       - AVATAR_ENABLE=${AVATAR_ENABLE:-true}
       - AVATAR_TIMEOUT_MS=${AVATAR_TIMEOUT_MS:-5000}
       - AVATAR_CONCURRENCY=${AVATAR_CONCURRENCY:-2}
       - SVG_CACHE_TTL_MS=${SVG_CACHE_TTL_MS:-600000}
       - NODE_ENV=${NODE_ENV:-production}
     volumes:
-      - ./referrals.db:/app/referrals.db
       - ./data:/app/data
     networks:
       - app-network

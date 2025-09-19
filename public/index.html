@@ -187,7 +187,7 @@
 
             const userInfo = document.getElementById('user-info');
             userInfo.innerHTML = `
-                <img src="${currentUser.avatar_url || '/default-avatar.png'}" alt="Avatar" class="avatar">
+                <img src="https://github.com/${currentUser.username}.png" alt="Avatar" class="avatar">
                 <div>
                     <strong>${currentUser.name || currentUser.username}</strong> (@${currentUser.username})
                     <br>

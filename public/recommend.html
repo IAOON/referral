@@ -212,42 +212,22 @@
             }
         }
 
-        // GitHub API에서 current user 정보 가져오기
+        // Current user 정보 로드 (API 호출 없이)
         async function loadCurrentUserInfo() {
-            if (!currentUser || !currentUser.username) return;
-            
-            try {
-                const response = await fetch(`https://api.github.com/users/${currentUser.username}`);
-                if (response.ok) {
-                    const userData = await response.json();
-                    // GitHub API에서 가져온 정보로 currentUser 업데이트
-                    currentUser.avatar_url = userData.avatar_url;
-                    currentUser.name = userData.name || userData.login;
-                } else {
-                    console.warn('Failed to fetch current user data from GitHub API');
-                }
-            } catch (error) {
-                console.error('Error fetching current user data:', error);
-            }
+            // currentUser는 이미 서버에서 받은 정보를 사용
+            // 추가 API 호출 불필요
         }
 
-        // GitHub API에서 target user 정보 가져오기
+        // Target user 정보 로드 (API 호출 없이)
         async function loadTargetUserInfo() {
             if (!targetUsername) return;
             
-            try {
-                const response = await fetch(`https://api.github.com/users/${targetUsername}`);
-                if (response.ok) {
-                    const userData = await response.json();
-                    window.targetUserData = userData;
-                } else {
-                    console.warn('Failed to fetch target user data from GitHub API');
-                    window.targetUserData = { login: targetUsername, name: targetUsername, avatar_url: '/default-avatar.png' };
-                }
-            } catch (error) {
-                console.error('Error fetching target user data:', error);
-                window.targetUserData = { login: targetUsername, name: targetUsername, avatar_url: '/default-avatar.png' };
-            }
+            // 간단한 사용자 정보 객체 생성 (API 호출 없이)
+            window.targetUserData = { 
+                login: targetUsername, 
+                name: targetUsername, 
+                avatar_url: `https://github.com/${targetUsername}.png` 
+            };
         }
 
         function showLoginSection() {
@@ -263,7 +243,7 @@
 
             const userInfo = document.getElementById('user-info');
             userInfo.innerHTML = `
-                <img src="${currentUser.avatar_url || '/default-avatar.png'}" alt="Avatar" class="avatar">
+                <img src="https://github.com/${currentUser.username}.png" alt="Avatar" class="avatar">
                 <div>
                     <strong>${currentUser.name || currentUser.username}</strong> (@${currentUser.username})
                     <br>
@@ -272,7 +252,7 @@
             `;
 
             const targetUserInfo = document.getElementById('target-user-info');
-            const targetData = window.targetUserData || { login: targetUsername, name: targetUsername, avatar_url: '/default-avatar.png' };
+            const targetData = window.targetUserData || { login: targetUsername, name: targetUsername, avatar_url: `https://github.com/${targetUsername}.png` };
             targetUserInfo.innerHTML = `
                 <div style="display: flex; align-items: center; justify-content: center; margin-bottom: 15px;">
                     <img src="${targetData.avatar_url}" alt="Target User Avatar" class="avatar" style="width: 50px; height: 50px; margin-right: 15px;">

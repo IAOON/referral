@@ -19,45 +19,16 @@ const pendingRequests = new Map(); // username -> Promise<svg>
 const svgCache = new Map(); // username -> { svg: string, expiresAt: number }
 
 // Database setup
-const db = new sqlite3.Database('./referrals.db', (err) => {
+const dbPath = process.env.REFERRALS_DB_PATH || `/app/data/referrals.db`;
+const db = new sqlite3.Database(dbPath, (err) => {
   if (err) {
     console.error('Error opening database:', err.message);
   } else {
     console.log('Connected to the SQLite database.');
     // Enforce foreign key constraints to protect referential integrity
     db.run('PRAGMA foreign_keys = ON');
-    initDatabase();
   }
 });
-
-function initDatabase() {
-  db.run(`CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    github_id INTEGER UNIQUE,
-    username TEXT UNIQUE,
-    name TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  )`);
-
-  db.run(`CREATE TABLE IF NOT EXISTS recommendations (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    recommender_id INTEGER,
-    recommended_username TEXT,
-    recommendation_text TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (recommender_id) REFERENCES users(id) ON UPDATE CASCADE ON DELETE CASCADE,
-    UNIQUE(recommender_id, recommended_username)
-  )`);
-
-  // Add recommendation_text column if it doesn't exist (for existing databases)
-  db.run(`ALTER TABLE recommendations ADD COLUMN recommendation_text TEXT`, (err) => {
-    if (err && !err.message.includes('duplicate column name')) {
-      console.log('recommendation_text column already exists or error:', err.message);
-    } else if (!err) {
-      console.log('Added recommendation_text column to recommendations table');
-    }
-  });
-}
 
 // Middleware
 app.use(cors({
@@ -74,13 +45,43 @@ app.use(session({
   cookie: { secure: false } // Set to true in production with HTTPS
 }));
 
-// dev purpose only
+// dev purpose only - 프로덕션에서는 비활성화
 const isNoLogin = (process.env.GITHUB_CLIENT_ID === undefined)
+const isProduction = (process.env.NODE_ENV === 'production')
+
+// 프로덕션에서 로컬 로그인 방지
+if (isNoLogin && isProduction) {
+  console.error('ERROR: Local login is not allowed in production environment!');
+  console.error('Please set GITHUB_CLIENT_ID environment variable.');
+  process.exit(1);
+}
 
 let passportStrategy;
 if (isNoLogin) {
+  console.warn('WARNING: Using local login strategy. This should only be used in development!');
+  
   const verify = (username, password, done) => {
-    return done(null, { id: 0, github_id: username, username: username });
+    // Upsert user to ensure they exist in the database
+    db.run(
+      `INSERT INTO users (github_id, username, name)
+       VALUES (?, ?, ?)
+       ON CONFLICT(github_id) DO UPDATE SET
+         username=excluded.username,
+         name=excluded.name`,
+      [username, username, username],
+      function(err) {
+        if (err) {
+          return done(err);
+        }
+        // Get the user ID after upsert - 대소문자 정규화
+        db.get('SELECT id FROM users WHERE LOWER(github_id) = LOWER(?)', [username], (err, user) => {
+          if (err) {
+            return done(err);
+          }
+          return done(null, { id: user.id, github_id: username, username: username });
+        });
+      }
+    );
   };
   passportStrategy = new LocalStrategy(verify);
 } else {
@@ -92,7 +93,7 @@ if (isNoLogin) {
        ON CONFLICT(github_id) DO UPDATE SET
          username=excluded.username,
          name=excluded.name`,
-      [profile.id, profile.username, profile.displayName],
+      [profile.id, profile.username, profile.displayName || profile.name || profile.username || 'Unknown User'],
       function(err) {
         if (err) {
           return done(err);
@@ -130,16 +131,6 @@ passport.deserializeUser(function(user, done) {
 app.use(passport.initialize());
 app.use(passport.session());
 
-// Cloudflare-friendly caching middleware for SVG routes
-app.use('/api/recommendations', (req, res, next) => {
-  // 클라우드플레어가 캐시할 수 있도록 허용 (5분 TTL)
-  res.set({
-    'Cache-Control': 'public, max-age=300, s-maxage=300',
-    'CDN-Cache-Control': 'max-age=300',
-    'Surrogate-Control': 'max-age=300'
-  });
-  next();
-});
 
 // Routes
 app.get('/', (req, res) => {
@@ -174,7 +165,7 @@ app.get('/auth/github',
   });
 
 app.get('/auth/github/callback',
-  passport.authenticate('github', { failureRedirect: '/login' }),
+  passport.authenticate('github', { failureRedirect: '/' }),
   function(req, res) {
     // Redirect to state parameter (which contains returnTo URL)
     const returnTo = req.query.state || '/';
@@ -214,8 +205,8 @@ app.post('/api/recommend', (req, res) => {
 
   // Check if user already recommended this person
   db.get(`SELECT id FROM recommendations
-          WHERE recommender_id = (SELECT id FROM users WHERE LOWER(github_id) = ?)
-          AND LOWER(recommended_username) = LOWER(?)`,
+          WHERE recommender_id = (SELECT id FROM users WHERE LOWER(github_id) = LOWER(?))
+          AND recommended_username = ?`,
     [req.user.github_id, recommendedUsername], (err, row) => {
     if (err) {
       return res.status(500).json({ error: 'Database error' });
@@ -227,7 +218,7 @@ app.post('/api/recommend', (req, res) => {
 
     // Add recommendation
     db.run(`INSERT INTO recommendations (recommender_id, recommended_username, recommendation_text)
-            VALUES ((SELECT id FROM users WHERE LOWER(github_id) = ?), ?, ?)`,
+            VALUES ((SELECT id FROM users WHERE LOWER(github_id) = LOWER(?)), ?, ?)`,
       [req.user.github_id, recommendedUsername, recommendationText || null], function(err) {
       if (err) {
         return res.status(500).json({ error: 'Failed to save recommendation' });
@@ -254,6 +245,8 @@ function fetchAvatarAsBase64(avatarUrl, maxRedirects = 5) {
     const url = new URL(avatarUrl);
     const client = url.protocol === 'https:' ? https : http;
     
+    const avatarTimeout = parseInt(process.env.AVATAR_TIMEOUT_MS) || 5000;
+    
     const options = {
       hostname: url.hostname,
       port: url.port || (url.protocol === 'https:' ? 443 : 80),
@@ -262,7 +255,8 @@ function fetchAvatarAsBase64(avatarUrl, maxRedirects = 5) {
       headers: {
         'User-Agent': 'Mozilla/5.0 (compatible; ReferralBot/1.0)',
         'Accept': 'image/*'
-      }
+      },
+      timeout: avatarTimeout
     };
     
     const request = client.request(options, (response) => {
@@ -294,8 +288,8 @@ function fetchAvatarAsBase64(avatarUrl, maxRedirects = 5) {
       reject(err);
     });
     
-    // Set timeout
-    request.setTimeout(10000, () => {
+    // Set timeout using environment variable
+    request.setTimeout(avatarTimeout, () => {
       request.destroy();
       reject(new Error('Request timeout'));
     });
@@ -419,6 +413,19 @@ function splitTextIntoLines(text, maxLength) {
   return result;
 }
 
+// XML/SVG 이스케이프 함수
+function escapeXml(unsafe) {
+  if (typeof unsafe !== 'string') {
+    return '';
+  }
+  return unsafe
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 // Function to generate SVG badge
 async function generateRecommendationsSVG(username, recommenders) {
   const width = 400;
@@ -494,8 +501,8 @@ async function generateRecommendationsSVG(username, recommenders) {
     <rect width="${width}" height="${height}" rx="6" class="bg"/>
 
     <!-- Header with timestamp -->
-    <text x="20" y="25" class="header">Endorsements for @${username}</text>
-    <text x="20" y="45" class="date" opacity="0.7">Generated: ${new Date().toLocaleString()}</text>`;
+    <text x="20" y="25" class="header">Endorsements for @${escapeXml(username)}</text>
+    <text x="20" y="45" class="date" opacity="0.7">Generated: ${escapeXml(new Date().toLocaleString())}</text>`;
 
   // Add recommendation items
   currentY = headerHeight + 20;
@@ -538,12 +545,12 @@ async function generateRecommendationsSVG(username, recommenders) {
     const displayName = recommender.name || recommender.username || 'Unknown User';
     const truncatedName = displayName.length > 20 ? displayName.substring(0, 17) + '...' : displayName;
 
-    svg += `<text x="${20 + avatarSize + 15}" y="${y - 8}" class="name">${truncatedName}</text>`;
-    svg += `<text x="${20 + avatarSize + 15}" y="${y + 8}" class="username">@${username}</text>`;
+    svg += `<text x="${20 + avatarSize + 15}" y="${y - 8}" class="name">${escapeXml(truncatedName)}</text>`;
+    svg += `<text x="${20 + avatarSize + 15}" y="${y + 8}" class="username">@${escapeXml(username)}</text>`;
 
     // Date
     const date = new Date(recommender.created_at).toLocaleDateString('ko-KR');
-    svg += `<text x="${width - 20}" y="${y - 8}" text-anchor="end" class="date">${date}</text>`;
+    svg += `<text x="${width - 20}" y="${y - 8}" text-anchor="end" class="date">${escapeXml(date)}</text>`;
 
     // Recommendation text (multiline support)
     if (recommender.recommendation_text) {
@@ -576,7 +583,7 @@ async function generateRecommendationsSVG(username, recommenders) {
           }
         }
         
-        svg += `<text x="${20 + avatarSize + 15}" y="${lineY}" class="text">${displayText}</text>`;
+        svg += `<text x="${20 + avatarSize + 15}" y="${lineY}" class="text">${escapeXml(displayText)}</text>`;
       });
     }
     
@@ -588,18 +595,27 @@ async function generateRecommendationsSVG(username, recommenders) {
   return svg;
 }
 
-// 클라우드플레어 친화적 캐시 헤더
-function setCloudflareCacheHeaders(res, ttlSeconds = 300) {
-  res.set({
-    'Content-Type': 'image/svg+xml; charset=utf-8',
-    // 클라우드플레어가 이해할 수 있는 캐시 헤더
-    'Cache-Control': `public, max-age=${ttlSeconds}, s-maxage=${ttlSeconds}`,
-    'CDN-Cache-Control': `max-age=${ttlSeconds}`,
-    'Surrogate-Control': `max-age=${ttlSeconds}`,
-    // ETag으로 변경 감지
-    'ETag': `"${username}-${lastModified}"`,
-    'Last-Modified': new Date(lastModified).toUTCString(),
-  });
+
+// Check if client has cached version (304 Not Modified)
+function checkCacheHeaders(req, username, lastModified) {
+  const etag = `"${username}-${lastModified}"`;
+  const lastModifiedDate = new Date(lastModified).toUTCString();
+  
+  // Check If-None-Match header
+  if (req.headers['if-none-match'] === etag) {
+    return true;
+  }
+  
+  // Check If-Modified-Since header
+  if (req.headers['if-modified-since']) {
+    const clientModifiedSince = new Date(req.headers['if-modified-since']);
+    const serverLastModified = new Date(lastModified);
+    if (clientModifiedSince >= serverLastModified) {
+      return true;
+    }
+  }
+  
+  return false;
 }
 
 // Set Cloudflare-friendly cache headers for SVG responses
@@ -615,9 +631,7 @@ function setCloudflareCacheHeaders(res, username, lastModified) {
     'Surrogate-Control': `max-age=${ttlSeconds}`,
     // ETag으로 변경 감지
     'ETag': etag,
-    'Last-Modified': new Date(lastModified).toUTCString(),
-    // 클라우드플레어 특화 헤더
-    'CF-Cache-Status': 'HIT' // 또는 MISS
+    'Last-Modified': new Date(lastModified).toUTCString()
   });
 }
 
@@ -631,7 +645,15 @@ app.get('/u/:username', async (req, res) => {
   // 1. 메모리 캐시 확인 (보조 캐시로 사용)
   const cached = svgCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) {
-    console.log(`[${username}] Memory cache HIT - serving from cache`);
+    console.log(`[${username}] Memory cache HIT - checking client cache`);
+    
+    // 304 Not Modified 체크
+    if (checkCacheHeaders(req, username, cached.lastModified)) {
+      console.log(`[${username}] Client has cached version - returning 304`);
+      return res.status(304).end();
+    }
+    
+    console.log(`[${username}] Serving from memory cache`);
     // 클라우드플레어 친화적 헤더 설정
     setCloudflareCacheHeaders(res, username, cached.lastModified);
     return res.send(cached.svg);
@@ -642,6 +664,13 @@ app.get('/u/:username', async (req, res) => {
     console.log(`[${username}] Request already in progress - waiting for result`);
     try {
       const result = await pendingRequests.get(cacheKey);
+      
+      // 304 Not Modified 체크
+      if (checkCacheHeaders(req, username, result.lastModified)) {
+        console.log(`[${username}] Client has cached version - returning 304`);
+        return res.status(304).end();
+      }
+      
       setCloudflareCacheHeaders(res, username, result.lastModified);
       return res.send(result.svg);
     } catch (error) {
@@ -663,6 +692,12 @@ app.get('/u/:username', async (req, res) => {
       lastModified: result.lastModified,
       expiresAt: Date.now() + 5 * 60 * 1000 
     });
+    
+    // 304 Not Modified 체크
+    if (checkCacheHeaders(req, username, result.lastModified)) {
+      console.log(`[${username}] Client has cached version - returning 304`);
+      return res.status(304).end();
+    }
     
     // 클라우드플레어 친화적 헤더 설정
     setCloudflareCacheHeaders(res, username, result.lastModified);
