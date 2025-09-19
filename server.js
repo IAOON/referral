@@ -717,7 +717,7 @@ async function generateSVGForUserWithMetadata(username) {
     db.all(`SELECT u.username, u.name, r.created_at, r.recommendation_text
             FROM recommendations r
             LEFT JOIN users u ON r.recommender_id = u.id
-            WHERE LOWER(r.recommended_username) = LOWER(?)
+            WHERE LOWER(r.recommended_username) = LOWER(?) AND r.is_visible = 1
             ORDER BY r.created_at DESC`,
       [username], async (err, rows) => {
       if (err) {

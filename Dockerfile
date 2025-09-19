@@ -15,6 +15,7 @@ RUN npm install
 COPY server.js ./
 COPY public ./public/
 COPY scripts ./scripts/
+COPY schema ./schema/
 
 # Create directory for database
 RUN mkdir -p /app/data
