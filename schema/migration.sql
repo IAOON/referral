@@ -33,10 +33,4 @@ CREATE INDEX IF NOT EXISTS idx_recommendations_recommender_id ON recommendations
 CREATE INDEX IF NOT EXISTS idx_users_github_id ON users(github_id);
 CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
 
--- For Testing Purpose
--- Hide specific recommendations from IAOON(UserID: 20) to malkoG
-UPDATE recommendations 
-SET is_visible = 0 
-WHERE recommender_id = 20 AND recommended_username = 'malkoG';
-
 COMMIT;
