@@ -237,6 +237,7 @@
         </div>
     </div>
 
+    <script src="/js/escape.js"></script>
     <script>
         let recommendations = [];
 
@@ -292,15 +293,15 @@
             container.innerHTML = recommendations.map(rec => `
                 <div class="recommendation-item ${rec.is_visible ? '' : 'hidden'}">
                     <div class="recommendation-header">
-                        <div class="recommendation-user">@${rec.recommender_username} (${rec.recommender_name || rec.recommender_username})</div>
+                        <div class="recommendation-user">@${escapeHtml(rec.recommender_username)} (${escapeHtml(rec.recommender_name || rec.recommender_username)})</div>
                         <div class="recommendation-date">${new Date(rec.created_at).toLocaleDateString('ko-KR')}</div>
                     </div>
-                    <div class="recommendation-text">${rec.recommendation_text || '추천사 텍스트가 없습니다.'}</div>
+                    <div class="recommendation-text">${escapeHtml(rec.recommendation_text || '추천사 텍스트가 없습니다.')}</div>
                     <div class="recommendation-actions">
                         <div class="visibility-toggle">
                             <span class="visibility-label">표시</span>
                             <div class="toggle-switch ${rec.is_visible ? 'active' : ''}" 
-                                 onclick="toggleVisibility(${rec.id}, ${rec.is_visible}, '${rec.recommender_username}')">
+                                 onclick="toggleVisibility(${rec.id}, ${rec.is_visible}, '${escapeJs(rec.recommender_username)}')">
                                 <div class="toggle-slider"></div>
                             </div>
                         </div>
@@ -352,7 +353,7 @@
         // 메시지 표시
         function showMessage(message, type) {
             const messageDiv = document.getElementById('message');
-            messageDiv.innerHTML = `<div class="${type}">${message}</div>`;
+            messageDiv.innerHTML = `<div class="${escapeHtmlAttr(type)}">${escapeHtml(message)}</div>`;
             
             // 3초 후 메시지 자동 제거
             setTimeout(() => {

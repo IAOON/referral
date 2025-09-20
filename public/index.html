@@ -160,6 +160,7 @@
         </div>
     </div>
 
+    <script src="/js/escape.js"></script>
     <script>
         let currentUser = null;
 
@@ -286,7 +287,7 @@
 
         function showMessage(text, type) {
             const messageDiv = document.getElementById('message');
-            messageDiv.innerHTML = `<div class="message ${type}">${text}</div>`;
+            messageDiv.innerHTML = `<div class="message ${escapeHtmlAttr(type)}">${escapeHtml(text)}</div>`;
             setTimeout(() => {
                 messageDiv.innerHTML = '';
             }, 5000);
