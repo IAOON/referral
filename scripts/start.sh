@@ -25,7 +25,7 @@ if [ ! -f "$DB_PATH" ]; then
     touch "$DB_PATH"
     
     # Initialize database with schema file
-    sqlite3 "$DB_PATH" < /app/schema/init.sql
+    sqlite3 -bail "$DB_PATH" < /app/schema/init.sql
     echo "Database initialized successfully!"
     echo "Database file created at: $DB_PATH"
 else
@@ -34,7 +34,7 @@ else
     
     # Safety check: Clean up any leftover temporary tables from previous failed migrations
     echo "Cleaning up any leftover temporary tables..."
-    sqlite3 "$DB_PATH" "
+    sqlite3 -bail "$DB_PATH" "
     DROP TABLE IF EXISTS recommendations_new;
     DROP TABLE IF EXISTS recommendations_temp;
     DROP TABLE IF EXISTS recommendations_backup;
@@ -42,7 +42,7 @@ else
     
     # Run migrations for existing databases
     echo "Running migration script..."
-    if sqlite3 "$DB_PATH" < /app/schema/migration.sql; then
+    if sqlite3 -bail "$DB_PATH" < /app/schema/migration.sql; then
         echo "Migration script executed successfully."
     else
         echo "Error: Migration script failed!"
@@ -54,14 +54,14 @@ else
     echo "Verifying migration results..."
     
     # Check if all required tables exist
-    TABLE_COUNT=$(sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('users', 'recommendations');" 2>/dev/null || echo "0")
+    TABLE_COUNT=$(sqlite3 -bail "$DB_PATH" "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('users', 'recommendations');" 2>/dev/null || echo "0")
     
     if [ "$TABLE_COUNT" -eq 2 ]; then
         echo "✓ All required tables are present."
         
         # Check if recommendations table has the correct structure
-        HAS_RECOMMENDATION_TEXT=$(sqlite3 "$DB_PATH" "PRAGMA table_info(recommendations);" | awk -F'|' '$2 == "recommendation_text" {print $2}' | wc -l)
-        HAS_IS_VISIBLE=$(sqlite3 "$DB_PATH" "PRAGMA table_info(recommendations);" | awk -F'|' '$2 == "is_visible" {print $2}' | wc -l)
+        HAS_RECOMMENDATION_TEXT=$(sqlite3 -bail "$DB_PATH" "PRAGMA table_info(recommendations);" | awk -F'|' '$2 == "recommendation_text" {print $2}' | wc -l)
+        HAS_IS_VISIBLE=$(sqlite3 -bail "$DB_PATH" "PRAGMA table_info(recommendations);" | awk -F'|' '$2 == "is_visible" {print $2}' | wc -l)
         
         if [ "$HAS_RECOMMENDATION_TEXT" -eq 1 ] && [ "$HAS_IS_VISIBLE" -eq 1 ]; then
             echo "✓ Recommendations table has correct structure."
