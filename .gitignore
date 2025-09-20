@@ -6,3 +6,5 @@ node_modules/
 /logs
 
 *.db
+*.db-wal
+*.db-shm

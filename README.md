@@ -5,7 +5,7 @@ GitHub OAuth를 이용한 추천 시스템입니다. 사용자는 GitHub 계정�
 ## 기능
 
 - **GitHub OAuth 인증**: 추천하는 사람은 GitHub 계정으로 인증되어야 합니다
-- **중복 추천 방지**: 같은 사용자는 한 사람을 한 번만 추천할 수 있습니다
+- **중복 추천 허용**: 같은 사용자가 다른 사람을 여러 번 추천할 수 있습니다
 - **추천 조회**: 특정 GitHub 사용자를 추천한 모든 사람들의 목록을 확인할 수 있습니다
 
 ## 기술 스택
@@ -157,10 +157,9 @@ docker-compose down
 ```sql
 CREATE TABLE users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  github_id INTEGER UNIQUE,
-  username TEXT UNIQUE,
+  github_id INTEGER NOT NULL UNIQUE,
+  username TEXT NOT NULL UNIQUE,
   name TEXT,
-  avatar_url TEXT,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 ```
@@ -169,12 +168,12 @@ CREATE TABLE users (
 ```sql
 CREATE TABLE recommendations (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  recommender_id INTEGER,
-  recommended_username TEXT,
+  recommender_id INTEGER NOT NULL,
+  recommended_username TEXT NOT NULL COLLATE NOCASE,
   recommendation_text TEXT,
+  is_visible INTEGER NOT NULL DEFAULT 1 CHECK (is_visible IN (0, 1)),
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (recommender_id) REFERENCES users(id) ON UPDATE CASCADE ON DELETE CASCADE,
-  UNIQUE(recommender_id, recommended_username)
+  FOREIGN KEY (recommender_id) REFERENCES users(id) ON UPDATE CASCADE ON DELETE CASCADE
 );
 ```
 

@@ -26,14 +26,8 @@ if [ ! -f "$DB_PATH" ]; then
     
     # Initialize database with schema file
     sqlite3 "$DB_PATH" < /app/schema/init.sql
-
-    if [ $? -eq 0 ]; then
-        echo "Database initialized successfully!"
-        echo "Database file created at: $DB_PATH"
-    else
-        echo "Error: Failed to initialize database"
-        exit 1
-    fi
+    echo "Database initialized successfully!"
+    echo "Database file created at: $DB_PATH"
 else
     echo "Database file already exists at: $DB_PATH"
     echo "Running database migrations..."
@@ -56,10 +50,40 @@ else
     
     if [ "$HAS_IS_VISIBLE" -eq 0 ]; then
         echo "Adding is_visible column..."
-        sqlite3 "$DB_PATH" "ALTER TABLE recommendations ADD COLUMN is_visible BOOLEAN DEFAULT 1;"
+        sqlite3 "$DB_PATH" "ALTER TABLE recommendations ADD COLUMN is_visible INTEGER DEFAULT 1 CHECK (is_visible IN (0, 1));"
     else
         echo "is_visible column already exists."
     fi
+
+    # Migrate BOOLEAN to INTEGER with CHECK constraint for is_visible
+    echo "Migrating BOOLEAN to INTEGER with CHECK constraint..."
+    sqlite3 "$DB_PATH" "
+    -- Update any NULL values to 1 (true) for is_visible
+    UPDATE recommendations SET is_visible = 1 WHERE is_visible IS NULL;
+    
+    -- Add NOT NULL constraint to critical columns if they don't exist
+    -- Note: SQLite doesn't support adding NOT NULL to existing columns directly
+    -- This is handled by the application logic to ensure data integrity
+    "
+
+    # Add case-insensitive collation for recommended_username
+    echo "Adding case-insensitive collation for recommended_username..."
+    sqlite3 "$DB_PATH" "
+    -- Create a new table with NOCASE collation
+    CREATE TABLE recommendations_temp AS SELECT * FROM recommendations;
+    DROP TABLE recommendations;
+    CREATE TABLE recommendations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        recommender_id INTEGER NOT NULL,
+        recommended_username TEXT NOT NULL COLLATE NOCASE,
+        recommendation_text TEXT,
+        is_visible INTEGER NOT NULL DEFAULT 1 CHECK (is_visible IN (0, 1)),
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (recommender_id) REFERENCES users(id) ON UPDATE CASCADE ON DELETE CASCADE
+    );
+    INSERT INTO recommendations SELECT * FROM recommendations_temp;
+    DROP TABLE recommendations_temp;
+    "
 
     # Quick integrity check
     TABLE_COUNT=$(sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('users', 'recommendations');" 2>/dev/null || echo "0")

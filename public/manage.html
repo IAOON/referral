@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>추천사 관리 - GitHub Referral</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2rem;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 1.1rem;
+        }
+
+        .content {
+            padding: 30px;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+
+        .error {
+            background: #fee;
+            color: #c33;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid #c33;
+        }
+
+        .success {
+            background: #efe;
+            color: #363;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid #363;
+        }
+
+        .recommendation-item {
+            border: 1px solid #e1e4e8;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 15px;
+            background: #f8f9fa;
+            transition: all 0.3s ease;
+        }
+
+        .recommendation-item:hover {
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            transform: translateY(-2px);
+        }
+
+        .recommendation-item.hidden {
+            opacity: 0.6;
+            background: #f1f3f4;
+        }
+
+        .recommendation-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .recommendation-user {
+            font-weight: bold;
+            color: #0366d6;
+            font-size: 1.1rem;
+        }
+
+        .recommendation-date {
+            color: #586069;
+            font-size: 0.9rem;
+        }
+
+        .recommendation-text {
+            color: #333;
+            line-height: 1.5;
+            margin-bottom: 15px;
+            font-style: italic;
+        }
+
+        .recommendation-actions {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .visibility-toggle {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .toggle-switch {
+            position: relative;
+            width: 50px;
+            height: 24px;
+            background: #ccc;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        .toggle-switch.active {
+            background: #28a745;
+        }
+
+        .toggle-slider {
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 20px;
+            height: 20px;
+            background: white;
+            border-radius: 50%;
+            transition: transform 0.3s;
+        }
+
+        .toggle-switch.active .toggle-slider {
+            transform: translateX(26px);
+        }
+
+        .visibility-label {
+            font-weight: 500;
+            color: #333;
+        }
+
+        .status-badge {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+
+        .status-visible {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status-hidden {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .back-link {
+            display: inline-block;
+            margin-bottom: 20px;
+            color: #0366d6;
+            text-decoration: none;
+            font-weight: 500;
+        }
+
+        .back-link:hover {
+            text-decoration: underline;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+
+        .empty-state h3 {
+            margin-bottom: 10px;
+            color: #333;
+        }
+
+        @media (max-width: 600px) {
+            .recommendation-header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 10px;
+            }
+
+            .recommendation-actions {
+                flex-direction: column;
+                gap: 15px;
+            }
+
+            .visibility-toggle {
+                width: 100%;
+                justify-content: space-between;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1 id="page-title">받은 추천사 관리</h1>
+            <p id="page-description">나에게 작성된 추천사를 관리하고 표시 여부를 설정할 수 있습니다</p>
+        </div>
+        
+        <div class="content">
+            <a href="/" class="back-link">← 메인 페이지로 돌아가기</a>
+            
+            <div id="message"></div>
+            <div id="loading" class="loading">추천사를 불러오는 중...</div>
+            <div id="recommendations"></div>
+        </div>
+    </div>
+
+    <script>
+        let recommendations = [];
+
+        // 페이지 로드 시 받은 추천사 목록 가져오기
+        async function loadRecommendations() {
+            try {
+                // URL에서 username 추출
+                const pathParts = window.location.pathname.split('/');
+                const username = pathParts[2]; // /u/:username/admin에서 username 추출
+                
+                // 페이지 제목 업데이트
+                document.getElementById('page-title').textContent = `@${username}의 추천사 관리`;
+                document.getElementById('page-description').textContent = `${username}님에게 작성된 추천사를 관리하고 표시 여부를 설정할 수 있습니다`;
+                
+                const response = await fetch(`/api/received-recommendations/${username}`);
+                if (!response.ok) {
+                    if (response.status === 401) {
+                        showMessage('로그인이 필요합니다.', 'error');
+                        return;
+                    }
+                    if (response.status === 403) {
+                        showMessage('접근 권한이 없습니다.', 'error');
+                        return;
+                    }
+                    throw new Error('Failed to load recommendations');
+                }
+                
+                recommendations = await response.json();
+                renderRecommendations();
+            } catch (error) {
+                console.error('Error loading recommendations:', error);
+                showMessage('추천사를 불러오는 중 오류가 발생했습니다.', 'error');
+            }
+        }
+
+        // 추천사 목록 렌더링
+        function renderRecommendations() {
+            const loading = document.getElementById('loading');
+            const container = document.getElementById('recommendations');
+            
+            loading.style.display = 'none';
+            
+            if (recommendations.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <h3>받은 추천사가 없습니다</h3>
+                        <p>아직 다른 사용자로부터 추천사를 받지 않았습니다.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = recommendations.map(rec => `
+                <div class="recommendation-item ${rec.is_visible ? '' : 'hidden'}">
+                    <div class="recommendation-header">
+                        <div class="recommendation-user">@${rec.recommender_username} (${rec.recommender_name || rec.recommender_username})</div>
+                        <div class="recommendation-date">${new Date(rec.created_at).toLocaleDateString('ko-KR')}</div>
+                    </div>
+                    <div class="recommendation-text">${rec.recommendation_text || '추천사 텍스트가 없습니다.'}</div>
+                    <div class="recommendation-actions">
+                        <div class="visibility-toggle">
+                            <span class="visibility-label">표시</span>
+                            <div class="toggle-switch ${rec.is_visible ? 'active' : ''}" 
+                                 onclick="toggleVisibility(${rec.id}, ${rec.is_visible}, '${rec.recommender_username}')">
+                                <div class="toggle-slider"></div>
+                            </div>
+                        </div>
+                        <div class="status-badge ${rec.is_visible ? 'status-visible' : 'status-hidden'}">
+                            ${rec.is_visible ? '표시됨' : '숨김'}
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // 표시/숨김 토글
+        async function toggleVisibility(id, currentVisibility, recommenderUsername) {
+            const newVisibility = !currentVisibility;
+            
+            try {
+                const response = await fetch('/api/toggle-recommendation-visibility', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        recommendationId: id,
+                        isVisible: newVisibility,
+                        recommendedUsername: recommenderUsername
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to update visibility');
+                }
+
+                // 로컬 상태 업데이트
+                const recommendation = recommendations.find(rec => rec.id === id);
+                if (recommendation) {
+                    recommendation.is_visible = newVisibility ? 1 : 0;
+                }
+
+                // UI 업데이트
+                renderRecommendations();
+                showMessage(`추천사가 ${newVisibility ? '표시' : '숨김'} 상태로 변경되었습니다.`, 'success');
+                
+            } catch (error) {
+                console.error('Error toggling visibility:', error);
+                showMessage('표시 상태 변경 중 오류가 발생했습니다.', 'error');
+            }
+        }
+
+        // 메시지 표시
+        function showMessage(message, type) {
+            const messageDiv = document.getElementById('message');
+            messageDiv.innerHTML = `<div class="${type}">${message}</div>`;
+            
+            // 3초 후 메시지 자동 제거
+            setTimeout(() => {
+                messageDiv.innerHTML = '';
+            }, 3000);
+        }
+
+        // 페이지 로드 시 초기화
+        document.addEventListener('DOMContentLoaded', loadRecommendations);
+    </script>
+</body>
+</html>

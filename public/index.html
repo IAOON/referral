@@ -70,6 +70,13 @@
         .logout-btn:hover {
             background: #cb2431;
         }
+        .manage-btn {
+            background: #0366d6;
+            margin-left: 10px;
+        }
+        .manage-btn:hover {
+            background: #0256cc;
+        }
         .recommendations {
             margin-top: 30px;
         }
@@ -192,6 +199,7 @@
                     <strong>${currentUser.name || currentUser.username}</strong> (@${currentUser.username})
                     <br>
                     <button class="logout-btn" onclick="logout()">로그아웃</button>
+                    <button class="manage-btn" onclick="window.location.href='/u/${currentUser.username}/admin'">추천사 관리</button>
                 </div>
             `;
         }
