@@ -28,109 +28,12 @@ const db = new sqlite3.Database(dbPath, (err) => {
     // Enforce foreign key constraints to protect referential integrity
     db.run('PRAGMA foreign_keys = ON');
     
-    // Run migration to remove UNIQUE constraint if it exists
-    migrateDatabase();
+    // Database migrations are now handled by schema/migration.sql
+    // No need for application-level migration logic
   }
 });
 
-// Migration function to remove UNIQUE constraint
-function migrateDatabase() {
-  // Check if recommendations_new table exists (from previous failed migration)
-  db.get("SELECT name FROM sqlite_master WHERE type='table' AND name='recommendations_new'", (err, row) => {
-    if (err) {
-      console.error('Error checking for recommendations_new table:', err.message);
-      return;
-    }
-    
-    if (row) {
-      console.log('Found existing recommendations_new table, cleaning up...');
-      // Drop the existing recommendations_new table
-      db.run('DROP TABLE recommendations_new', (err) => {
-        if (err) {
-          console.error('Error dropping existing recommendations_new table:', err.message);
-          return;
-        }
-        console.log('Cleaned up existing recommendations_new table');
-        // Continue with migration
-        performMigration();
-      });
-    } else {
-      // No existing recommendations_new table, proceed with migration
-      performMigration();
-    }
-  });
-}
-
-function performMigration() {
-  // Check if the recommendations table has the UNIQUE constraint
-  db.all("PRAGMA table_info(recommendations)", (err, columns) => {
-    if (err) {
-      console.error('Error checking table info:', err.message);
-      return;
-    }
-    
-    // Check if the table exists and has data
-    db.get("SELECT COUNT(*) as count FROM recommendations", (err, row) => {
-      if (err) {
-        console.log('Recommendations table does not exist or is empty, no migration needed');
-        return;
-      }
-      
-      if (row.count > 0) {
-        console.log('Running migration to remove UNIQUE constraint...');
-        
-        // Create new table without UNIQUE constraint
-        db.run(`
-          CREATE TABLE recommendations_new (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            recommender_id INTEGER,
-            recommended_username TEXT,
-            recommendation_text TEXT,
-            is_visible BOOLEAN DEFAULT 1,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (recommender_id) REFERENCES users(id) ON UPDATE CASCADE ON DELETE CASCADE
-          )
-        `, (err) => {
-          if (err) {
-            console.error('Error creating new table:', err.message);
-            return;
-          }
-          
-          // Copy data from old table to new table
-          db.run(`
-            INSERT INTO recommendations_new (id, recommender_id, recommended_username, recommendation_text, is_visible, created_at)
-            SELECT id, recommender_id, recommended_username, recommendation_text, is_visible, created_at
-            FROM recommendations
-          `, (err) => {
-            if (err) {
-              console.error('Error copying data:', err.message);
-              return;
-            }
-            
-            // Drop old table and rename new table
-            db.run('DROP TABLE recommendations', (err) => {
-              if (err) {
-                console.error('Error dropping old table:', err.message);
-                return;
-              }
-              
-              db.run('ALTER TABLE recommendations_new RENAME TO recommendations', (err) => {
-                if (err) {
-                  console.error('Error renaming table:', err.message);
-                  return;
-                }
-                
-                console.log('Migration completed successfully - UNIQUE constraint removed');
-              });
-            });
-          });
-        });
-      } else {
-        console.log('No data in recommendations table, no migration needed');
-      }
-    });
-  });
-}
+// Migration functions removed - now handled by schema/migration.sql
 
 // Middleware
 app.use(cors({

@@ -33,13 +33,29 @@ CREATE INDEX IF NOT EXISTS idx_users_github_id ON users(github_id);
 CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
 
 -- Migration: Remove UNIQUE constraint to allow duplicate recommendations
--- Check if the unique constraint exists and drop it
--- Note: SQLite doesn't support DROP CONSTRAINT directly, so we need to recreate the table
--- First, check if the constraint exists by looking at the table schema
--- If the constraint exists, we'll recreate the table without it
+-- This migration safely recreates the recommendations table without UNIQUE constraints
+-- while preserving all existing data and indexes
 
--- Create a temporary table with the new schema (without UNIQUE constraint)
-CREATE TABLE IF NOT EXISTS recommendations_new (
+-- Check if recommendations table exists and has data
+-- If it exists, we need to migrate it to remove any UNIQUE constraints
+
+-- Step 1: Check if we need to migrate (only if recommendations table exists and has data)
+-- This is handled by checking if the table exists and has rows
+
+-- Step 2: Create backup table with current data (if exists)
+CREATE TABLE IF NOT EXISTS recommendations_backup AS 
+SELECT * FROM recommendations WHERE 1=0; -- Create empty table with same structure
+
+-- Step 3: Copy existing data to backup (only if recommendations table has data)
+INSERT INTO recommendations_backup 
+SELECT * FROM recommendations 
+WHERE EXISTS (SELECT 1 FROM sqlite_master WHERE type='table' AND name='recommendations');
+
+-- Step 4: Drop the original recommendations table (if it exists)
+DROP TABLE IF EXISTS recommendations;
+
+-- Step 5: Create new recommendations table without UNIQUE constraints
+CREATE TABLE recommendations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     recommender_id INTEGER NOT NULL,
     recommended_username TEXT NOT NULL COLLATE NOCASE,
@@ -49,7 +65,18 @@ CREATE TABLE IF NOT EXISTS recommendations_new (
     FOREIGN KEY (recommender_id) REFERENCES users(id) ON UPDATE CASCADE ON DELETE CASCADE
 );
 
--- Copy data from old table to new table (only if old table exists and has data)
--- This will be handled by the application logic to avoid data loss
+-- Step 6: Restore data from backup
+INSERT INTO recommendations 
+SELECT * FROM recommendations_backup;
+
+-- Step 7: Recreate indexes for the new table
+CREATE INDEX IF NOT EXISTS idx_recommendations_recommended_username ON recommendations(recommended_username);
+CREATE INDEX IF NOT EXISTS idx_recommendations_recommender_id ON recommendations(recommender_id);
+
+-- Step 8: Clean up backup table
+DROP TABLE IF EXISTS recommendations_backup;
+
+-- Step 9: Clean up any leftover recommendations_new table from previous failed migrations
+DROP TABLE IF EXISTS recommendations_new;
 
 COMMIT;

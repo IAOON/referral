@@ -32,68 +32,48 @@ else
     echo "Database file already exists at: $DB_PATH"
     echo "Running database migrations..."
     
+    # Safety check: Clean up any leftover temporary tables from previous failed migrations
+    echo "Cleaning up any leftover temporary tables..."
+    sqlite3 "$DB_PATH" "
+    DROP TABLE IF EXISTS recommendations_new;
+    DROP TABLE IF EXISTS recommendations_temp;
+    DROP TABLE IF EXISTS recommendations_backup;
+    " 2>/dev/null || true
+    
     # Run migrations for existing databases
-    sqlite3 "$DB_PATH" < /app/schema/migration.sql
-    
-    # Check if recommendation_text column exists
-    HAS_RECOMMENDATION_TEXT=$(sqlite3 "$DB_PATH" "PRAGMA table_info(recommendations);" | awk -F'|' '$2 == "recommendation_text" {print $2}' | wc -l)
-    
-    if [ "$HAS_RECOMMENDATION_TEXT" -eq 0 ]; then
-        echo "Adding recommendation_text column..."
-        sqlite3 "$DB_PATH" "ALTER TABLE recommendations ADD COLUMN recommendation_text TEXT;"
+    echo "Running migration script..."
+    if sqlite3 "$DB_PATH" < /app/schema/migration.sql; then
+        echo "Migration script executed successfully."
     else
-        echo "recommendation_text column already exists."
+        echo "Error: Migration script failed!"
+        echo "Database may be in an inconsistent state."
+        exit 1
     fi
 
-    # Check if is_visible column exists
-    HAS_IS_VISIBLE=$(sqlite3 "$DB_PATH" "PRAGMA table_info(recommendations);" | awk -F'|' '$2 == "is_visible" {print $2}' | wc -l)
+    # Verify migration success
+    echo "Verifying migration results..."
     
-    if [ "$HAS_IS_VISIBLE" -eq 0 ]; then
-        echo "Adding is_visible column..."
-        sqlite3 "$DB_PATH" "ALTER TABLE recommendations ADD COLUMN is_visible INTEGER DEFAULT 1 CHECK (is_visible IN (0, 1));"
-    else
-        echo "is_visible column already exists."
-    fi
-
-    # Migrate BOOLEAN to INTEGER with CHECK constraint for is_visible
-    echo "Migrating BOOLEAN to INTEGER with CHECK constraint..."
-    sqlite3 "$DB_PATH" "
-    -- Update any NULL values to 1 (true) for is_visible
-    UPDATE recommendations SET is_visible = 1 WHERE is_visible IS NULL;
-    
-    -- Add NOT NULL constraint to critical columns if they don't exist
-    -- Note: SQLite doesn't support adding NOT NULL to existing columns directly
-    -- This is handled by the application logic to ensure data integrity
-    "
-
-    # Add case-insensitive collation for recommended_username
-    echo "Adding case-insensitive collation for recommended_username..."
-    sqlite3 "$DB_PATH" "
-    -- Create a new table with NOCASE collation
-    CREATE TABLE recommendations_temp AS SELECT * FROM recommendations;
-    DROP TABLE recommendations;
-    CREATE TABLE recommendations (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        recommender_id INTEGER NOT NULL,
-        recommended_username TEXT NOT NULL COLLATE NOCASE,
-        recommendation_text TEXT,
-        is_visible INTEGER NOT NULL DEFAULT 1 CHECK (is_visible IN (0, 1)),
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (recommender_id) REFERENCES users(id) ON UPDATE CASCADE ON DELETE CASCADE
-    );
-    INSERT INTO recommendations SELECT * FROM recommendations_temp;
-    DROP TABLE recommendations_temp;
-    "
-
-    # Quick integrity check
+    # Check if all required tables exist
     TABLE_COUNT=$(sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('users', 'recommendations');" 2>/dev/null || echo "0")
     
     if [ "$TABLE_COUNT" -eq 2 ]; then
-        echo "Database tables are present and valid."
-        echo "Database migration completed!"
+        echo "✓ All required tables are present."
+        
+        # Check if recommendations table has the correct structure
+        HAS_RECOMMENDATION_TEXT=$(sqlite3 "$DB_PATH" "PRAGMA table_info(recommendations);" | awk -F'|' '$2 == "recommendation_text" {print $2}' | wc -l)
+        HAS_IS_VISIBLE=$(sqlite3 "$DB_PATH" "PRAGMA table_info(recommendations);" | awk -F'|' '$2 == "is_visible" {print $2}' | wc -l)
+        
+        if [ "$HAS_RECOMMENDATION_TEXT" -eq 1 ] && [ "$HAS_IS_VISIBLE" -eq 1 ]; then
+            echo "✓ Recommendations table has correct structure."
+            echo "✓ Database migration completed successfully!"
+        else
+            echo "✗ Warning: Recommendations table structure may be incorrect."
+            echo "Missing columns: recommendation_text=$HAS_RECOMMENDATION_TEXT, is_visible=$HAS_IS_VISIBLE"
+            exit 1
+        fi
     else
-        echo "Warning: Database tables may be missing or corrupted."
-        echo "Consider recreating the database file."
+        echo "✗ Error: Required tables are missing or corrupted."
+        echo "Expected 2 tables (users, recommendations), found $TABLE_COUNT"
         exit 1
     fi
 fi
