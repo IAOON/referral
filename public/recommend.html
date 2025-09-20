@@ -149,6 +149,7 @@
         </div>
     </div>
 
+    <script src="/js/escape.js"></script>
     <script>
         let currentUser = null;
         let targetUsername = '';
@@ -243,9 +244,9 @@
 
             const userInfo = document.getElementById('user-info');
             userInfo.innerHTML = `
-                <img src="https://github.com/${currentUser.username}.png" alt="Avatar" class="avatar">
+                <img src="https://github.com/${escapeHtmlAttr(currentUser.username)}.png" alt="Avatar" class="avatar">
                 <div>
-                    <strong>${currentUser.name || currentUser.username}</strong> (@${currentUser.username})
+                    <strong>${escapeHtml(currentUser.name || currentUser.username)}</strong> (@${escapeHtml(currentUser.username)})
                     <br>
                     <button class="logout-btn" onclick="logout()">로그아웃</button>
                 </div>
@@ -255,10 +256,10 @@
             const targetData = window.targetUserData || { login: targetUsername, name: targetUsername, avatar_url: `https://github.com/${targetUsername}.png` };
             targetUserInfo.innerHTML = `
                 <div style="display: flex; align-items: center; justify-content: center; margin-bottom: 15px;">
-                    <img src="${targetData.avatar_url}" alt="Target User Avatar" class="avatar" style="width: 50px; height: 50px; margin-right: 15px;">
+                    <img src="${escapeHtmlAttr(targetData.avatar_url)}" alt="Target User Avatar" class="avatar" style="width: 50px; height: 50px; margin-right: 15px;">
                     <div>
-                        <h3 style="margin: 0; color: #1976d2;">${targetData.name || targetData.login}</h3>
-                        <p style="margin: 5px 0 0 0; color: #666;">@${targetData.login}</p>
+                        <h3 style="margin: 0; color: #1976d2;">${escapeHtml(targetData.name || targetData.login)}</h3>
+                        <p style="margin: 5px 0 0 0; color: #666;">@${escapeHtml(targetData.login)}</p>
                     </div>
                 </div>
                 <p>이 사용자에 대한 추천사를 작성해주세요.</p>
@@ -311,7 +312,7 @@
 
         function showMessage(text, type) {
             const messageDiv = document.getElementById('message');
-            messageDiv.innerHTML = `<div class="message ${type}">${text}</div>`;
+            messageDiv.innerHTML = `<div class="message ${escapeHtmlAttr(type)}">${escapeHtml(text)}</div>`;
             setTimeout(() => {
                 messageDiv.innerHTML = '';
             }, 5000);

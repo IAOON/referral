@@ -4,4 +4,7 @@ node_modules/
 
 /data
 /logs
-referrals.db
+
+*.db
+*.db-wal
+*.db-shm

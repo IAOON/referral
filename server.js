@@ -27,8 +27,13 @@ const db = new sqlite3.Database(dbPath, (err) => {
     console.log('Connected to the SQLite database.');
     // Enforce foreign key constraints to protect referential integrity
     db.run('PRAGMA foreign_keys = ON');
+    
+    // Database migrations are now handled by schema/migration.sql
+    // No need for application-level migration logic
   }
 });
+
+// Migration functions removed - now handled by schema/migration.sql
 
 // Middleware
 app.use(cors({
@@ -203,24 +208,26 @@ app.post('/api/recommend', (req, res) => {
     return res.status(400).json({ error: 'Recommendation text must be 500 characters or less' });
   }
 
-  // Check if user already recommended this person
-  db.get(`SELECT id FROM recommendations
-          WHERE recommender_id = (SELECT id FROM users WHERE LOWER(github_id) = LOWER(?))
-          AND recommended_username = ?`,
-    [req.user.github_id, recommendedUsername], (err, row) => {
+  // First, check if the recommender exists in the database
+  db.get(`SELECT id FROM users WHERE LOWER(github_id) = LOWER(?)`, [req.user.github_id], (err, user) => {
     if (err) {
+      console.error('Database error when checking user:', err);
       return res.status(500).json({ error: 'Database error' });
     }
 
-    if (row) {
-      return res.status(400).json({ error: 'You have already recommended this user' });
+    if (!user) {
+      console.error('User not found in database:', req.user.github_id);
+      return res.status(400).json({ error: 'User not found. Please log in again.' });
     }
 
-    // Add recommendation
+    // Add recommendation (duplicate recommendations are now allowed)
     db.run(`INSERT INTO recommendations (recommender_id, recommended_username, recommendation_text)
-            VALUES ((SELECT id FROM users WHERE LOWER(github_id) = LOWER(?)), ?, ?)`,
-      [req.user.github_id, recommendedUsername, recommendationText || null], function(err) {
+            VALUES (?, ?, ?)`,
+      [user.id, recommendedUsername, recommendationText || null], function(err) {
       if (err) {
+        console.error('Database error when saving recommendation:', err);
+        console.error('User id:', user.id);
+        console.error('Recommended username:', recommendedUsername);
         return res.status(500).json({ error: 'Failed to save recommendation' });
       }
       
@@ -717,7 +724,7 @@ async function generateSVGForUserWithMetadata(username) {
     db.all(`SELECT u.username, u.name, r.created_at, r.recommendation_text
             FROM recommendations r
             LEFT JOIN users u ON r.recommender_id = u.id
-            WHERE LOWER(r.recommended_username) = LOWER(?)
+            WHERE LOWER(r.recommended_username) = LOWER(?) AND r.is_visible = 1
             ORDER BY r.created_at DESC`,
       [username], async (err, rows) => {
       if (err) {
@@ -794,6 +801,125 @@ app.get('/health', (req, res) => {
 // Recommendation page for specific user
 app.get('/t/:username', (req, res) => {
   res.sendFile(__dirname + '/public/recommend.html');
+});
+
+// Admin page for user's own recommendations management
+app.get('/u/:username/admin', (req, res) => {
+  // Check if user is authenticated
+  if (!req.isAuthenticated()) {
+    return res.status(401).send(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>인증 필요</title>
+        <style>
+          body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; text-align: center; padding: 50px; }
+          .error { color: #d73a49; }
+          .btn { background: #0366d6; color: white; padding: 10px 20px; text-decoration: none; border-radius: 6px; display: inline-block; margin-top: 20px; }
+        </style>
+      </head>
+      <body>
+        <h1 class="error">로그인이 필요합니다</h1>
+        <p>이 페이지에 접근하려면 먼저 로그인해주세요.</p>
+        <a href="/" class="btn">메인 페이지로 이동</a>
+      </body>
+      </html>
+    `);
+  }
+
+  // Check if the authenticated user matches the username in URL
+  if (req.user.username.toLowerCase() !== req.params.username.toLowerCase()) {
+    return res.status(403).send(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>접근 거부</title>
+        <style>
+          body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; text-align: center; padding: 50px; }
+          .error { color: #d73a49; }
+          .btn { background: #0366d6; color: white; padding: 10px 20px; text-decoration: none; border-radius: 6px; display: inline-block; margin-top: 20px; }
+        </style>
+      </head>
+      <body>
+        <h1 class="error">접근 권한이 없습니다</h1>
+        <p>다른 사용자의 관리 페이지에 접근할 수 없습니다.</p>
+        <a href="/" class="btn">메인 페이지로 이동</a>
+      </body>
+      </html>
+    `);
+  }
+
+  res.sendFile(__dirname + '/public/manage.html');
+});
+
+// Get recommendations received by the user for management
+app.get('/api/received-recommendations/:username', (req, res) => {
+  if (!req.isAuthenticated()) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+
+  const { username } = req.params;
+  
+  // Verify the user is accessing their own admin page
+  if (req.user.username.toLowerCase() !== username.toLowerCase()) {
+    return res.status(403).json({ error: 'Access denied' });
+  }
+
+  db.all(`SELECT r.id, r.recommendation_text, r.is_visible, r.created_at,
+                 u.username as recommender_username, u.name as recommender_name
+          FROM recommendations r
+          LEFT JOIN users u ON r.recommender_id = u.id
+          WHERE LOWER(r.recommended_username) = LOWER(?)
+          ORDER BY r.created_at DESC`,
+    [username], (err, rows) => {
+    if (err) {
+      return res.status(500).json({ error: 'Database error' });
+    }
+    res.json(rows);
+  });
+});
+
+// Toggle recommendation visibility
+app.post('/api/toggle-recommendation-visibility', (req, res) => {
+  if (!req.isAuthenticated()) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+
+  const { recommendationId, isVisible } = req.body;
+
+  if (!recommendationId || typeof isVisible !== 'boolean') {
+    return res.status(400).json({ error: 'Invalid parameters' });
+  }
+
+  // Verify the recommendation is for the authenticated user (received recommendations)
+  db.get(`SELECT id FROM recommendations 
+          WHERE id = ? AND LOWER(recommended_username) = LOWER(?)`,
+    [recommendationId, req.user.username], (err, row) => {
+    if (err) {
+      return res.status(500).json({ error: 'Database error' });
+    }
+
+    if (!row) {
+      return res.status(404).json({ error: 'Recommendation not found or not authorized' });
+    }
+
+    // Update visibility
+    db.run(`UPDATE recommendations SET is_visible = ? WHERE id = ?`,
+      [isVisible ? 1 : 0, recommendationId], function(err) {
+      if (err) {
+        return res.status(500).json({ error: 'Failed to update recommendation' });
+      }
+
+      // 캐시 무효화 - 해당 사용자의 SVG 캐시 제거
+      const cacheKey = req.body.recommendedUsername?.toLowerCase();
+      if (cacheKey) {
+        svgCache.delete(cacheKey);
+        console.log(`[${cacheKey}] Cache invalidated after visibility change`);
+      }
+
+      res.json({ success: true, message: 'Recommendation visibility updated' });
+    });
+  });
 });
 
 // Add request timeout and keep-alive settings
