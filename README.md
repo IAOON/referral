@@ -31,7 +31,7 @@ GitHub OAuth를 이용한 개발자 추천 시스템입니다. 사용자는 GitH
 
 ## 📁 프로젝트 구조
 
-```
+```text
 referral/
 ├── server.js              # 메인 서버 파일
 ├── package.json           # Node.js 의존성
@@ -65,6 +65,8 @@ referral/
    - **Homepage URL**: `http://localhost:3000` (로컬) 또는 `https://yourdomain.com` (프로덕션)
    - **Authorization callback URL**: `http://localhost:3000/auth/github/callback` (로컬) 또는 `https://yourdomain.com/auth/github/callback` (프로덕션)
 3. **Client ID**와 **Client Secret** 복사
+
+> ⚠️ **중요**: GitHub OAuth 앱의 콜백 URL은 `.env` 파일의 `CALLBACK_URL`과 **완전히 동일**해야 합니다. 프로덕션에서는 `https://$DOMAIN/auth/github/callback` 형태여야 합니다.
 
 ### 2. 환경 변수 설정
 
@@ -118,6 +120,20 @@ npm start
 
 ### 4. Docker를 이용한 배포
 
+#### 도메인 설정
+Docker Compose 배포 시 Caddy가 자동으로 SSL 인증서를 발급받으려면 도메인 설정이 필요합니다:
+
+1. **DNS 설정**: 도메인의 A/AAAA 레코드를 서버 IP로 설정
+2. **환경 변수**: `.env` 파일에 `DOMAIN=yourdomain.com` 설정
+3. **자동 전달**: Docker Compose가 `.env`의 `DOMAIN` 값을 Caddy 컨테이너의 환경변수로 전달
+   ```yaml
+   # docker-compose.yml에서 환경변수 전달
+   caddy:
+     environment:
+       - DOMAIN=${DOMAIN:?Set DOMAIN in .env (e.g., example.com)}
+   ```
+4. **Caddyfile 처리**: Caddy가 `{$DOMAIN}` 변수를 실제 도메인으로 치환하여 SSL 인증서 발급
+
 ```bash
 # 빌드 및 실행
 docker-compose up -d
@@ -157,14 +173,19 @@ CREATE TABLE recommendations (
 
 ## 🔌 API 엔드포인트
 
-### 인증
+### 인증 (인증 불필요)
 - `GET /auth/github` - GitHub 로그인
 - `GET /auth/github/callback` - OAuth 콜백
 - `GET /logout` - 로그아웃
-- `GET /api/user` - 현재 사용자 정보
+- `GET /api/user` - 현재 사용자 정보 (인증된 사용자만)
 
-### 추천
+### 추천 (인증 필요)
 - `POST /api/recommend` - 사용자 추천
+  - **인증**: GitHub OAuth 로그인 필수
+  - **입력 제한**: 
+    - `recommendedUsername`: 필수, 문자열
+    - `recommendationText`: 선택사항, 최대 500자
+  - **권한**: 본인만 추천 가능
   ```json
   {
     "recommendedUsername": "target-github-username",
@@ -173,15 +194,44 @@ CREATE TABLE recommendations (
   ```
 
 ### 추천 조회 및 관리
-- `GET /u/:username` - 받은 추천사 목록을 SVG 형식으로 반환(Github 등에 첨부 가능한 이미지 형식)
-- `GET /t/:username` - 추천 페이지
-- `GET /u/:username/admin` - 추천사 관리 페이지
-- `GET /api/received-recommendations/:username` - 받은 추천사 목록을 JSON 형식으로 반환
-- `POST /api/toggle-recommendation-visibility` - 추천사 공개/비공개 설정
+- `GET /u/:username` - 받은 추천사 목록을 SVG 형식으로 반환 (인증 불필요)
+  - **용도**: GitHub 등에 첨부 가능한 이미지 형식
+  - **캐싱**: 5분 TTL, Cloudflare CDN 캐시
+  
+- `GET /t/:username` - 추천 페이지 (인증 불필요)
+  - **용도**: 특정 사용자에 대한 추천 페이지
+
+- `GET /u/:username/admin` - 추천사 관리 페이지 (인증 + 권한 필요)
+  - **인증**: GitHub OAuth 로그인 필수
+  - **권한**: URL의 `:username`과 로그인한 사용자명이 일치해야 함
+  - **접근 제한**: 본인의 관리 페이지만 접근 가능
+
+- `GET /api/received-recommendations/:username` - 받은 추천사 목록을 JSON 형식으로 반환 (인증 + 권한 필요)
+  - **인증**: GitHub OAuth 로그인 필수
+  - **권한**: URL의 `:username`과 로그인한 사용자명이 일치해야 함
+  - **응답**: 추천사 ID, 내용, 공개여부, 작성자 정보 포함
+
+- `POST /api/toggle-recommendation-visibility` - 추천사 공개/비공개 설정 (인증 + 권한 필요)
+  - **인증**: GitHub OAuth 로그인 필수
+  - **권한**: 본인이 받은 추천사만 수정 가능
+  - **입력 제한**:
+    - `recommendationId`: 필수, 정수
+    - `isVisible`: 필수, boolean
+  - **보안**: 추천사 소유권 검증 후 수정 허용
 
 ### 기타
-- `GET /health` - 헬스 체크
-- `GET /renderer-test` - SVG 렌더러 테스트 (개발 모드에서만 동작)
+- `GET /health` - 헬스 체크 (인증 불필요)
+- `GET /renderer-test` - SVG 렌더러 테스트 (개발 모드에서만 동작, 인증 불필요)
+
+### 보안 및 제한사항
+- **인증 방식**: GitHub OAuth 2.0 + 세션 기반
+- **권한 검증**: 사용자명 대소문자 구분 없이 비교
+- **입력 검증**: 
+  - 추천사 텍스트 최대 500자 제한
+  - SQL 인젝션 방지를 위한 Prepared Statements 사용
+- **XSS 방지**: HTML 이스케이프 처리
+- **CSRF 보호**: 세션 기반 인증 + SameSite 쿠키
+- **레이트 리미팅**: 현재 구현되지 않음 (추후 추가 권장)
 
 ## 🎨 SVG 배지 기능
 
@@ -234,11 +284,11 @@ CREATE TABLE recommendations (
 
 ## 🤝 기여하기
 
-1. Fork the Project
-2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the Branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+1. 프로젝트를 Fork하세요
+2. 기능 브랜치를 생성하세요 (`git checkout -b feature/새로운기능`)
+3. 변경사항을 커밋하세요 (`git commit -m '새로운 기능 추가'`)
+4. 브랜치에 푸시하세요 (`git push origin feature/새로운기능`)
+5. Pull Request를 생성하세요
 
 ## 📞 지원
 
