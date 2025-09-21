@@ -1,109 +1,138 @@
-# GitHub 추천 시스템
+# GitHub 추천 시스템 (Referral System)
 
-GitHub OAuth를 이용한 추천 시스템입니다. 사용자는 GitHub 계정으로 인증한 후 다른 GitHub 사용자를 추천할 수 있습니다.
+GitHub OAuth를 이용한 개발자 추천 시스템입니다. 사용자는 GitHub 계정으로 인증한 후 다른 GitHub 사용자를 추천할 수 있으며, 추천 정보는 SVG 배지 형태로 시각화됩니다.
 
-## 기능
+## 🚀 주요 기능
 
-- **GitHub OAuth 인증**: 추천하는 사람은 GitHub 계정으로 인증되어야 합니다
-- **중복 추천 허용**: 같은 사용자가 다른 사람을 여러 번 추천할 수 있습니다
-- **추천 조회**: 특정 GitHub 사용자를 추천한 모든 사람들의 목록을 확인할 수 있습니다
+- **GitHub OAuth 인증**: GitHub 계정으로 안전한 로그인
+- **개발자 추천**: 다른 GitHub 사용자를 추천하고 추천사 작성 가능
+- **SVG 배지 생성**: 추천 정보를 시각적인 SVG 배지로 표시
+- **추천 관리**: 본인이 받은 추천사들을 관리하고 공개/비공개 설정 가능
+- **중복 추천 허용**: 같은 사용자를 여러 번 추천 가능
+- **실시간 캐싱**: Cloudflare 친화적 캐싱으로 성능 최적화
 
-## 기술 스택
+## 🛠 기술 스택
 
-- **Backend**: Node.js + Express
-- **Database**: SQLite
-- **Authentication**: GitHub OAuth (Passport.js)
-- **Frontend**: Vanilla JavaScript + HTML/CSS
-- **Deployment**: Docker + Docker Compose + Caddy
+### Backend
+- **Node.js** + **Express.js** - 웹 서버
+- **SQLite** - 데이터베이스 (WAL 모드)
+- **Passport.js** - 인증 미들웨어
+- **GitHub OAuth 2.0** - 소셜 로그인
 
-## 실제 작동 중인 데모
+### Frontend
+- **Vanilla JavaScript** - 클라이언트 사이드 로직
+- **HTML5/CSS3** - 반응형 UI
+- **SVG** - 동적 배지 생성
 
-![@IAOON's referrals list](https://referral.akaiaoon.dev/u/IAOON)
+### Infrastructure
+- **Docker** + **Docker Compose** - 컨테이너화
+- **Caddy** - 리버스 프록시 및 SSL 터미네이션
+- **Cloudflare** - CDN 및 캐싱
 
-[refer me a referrals Image(WIP)](https://referral.akaiaoon.dev/t/IAOON) 
+## 📁 프로젝트 구조
 
-## 로컬 개발 환경 설정
+```text
+referral/
+├── server.js              # 메인 서버 파일
+├── package.json           # Node.js 의존성
+├── docker-compose.yml     # Docker Compose 설정
+├── Dockerfile            # Docker 이미지 빌드
+├── Caddyfile             # Caddy 리버스 프록시 설정
+├── public/               # 정적 파일
+│   ├── index.html        # 메인 페이지
+│   ├── recommend.html    # 추천 페이지
+│   ├── manage.html       # 추천사 관리 페이지
+│   ├── local-login.html  # 개발용 로컬 로그인
+│   ├── style.css         # 스타일시트
+│   └── js/
+│       └── escape.js     # XSS 방지 유틸리티
+├── schema/               # 데이터베이스 스키마
+│   ├── init.sql          # 초기 데이터베이스 생성
+│   └── migration.sql     # 데이터베이스 마이그레이션
+├── scripts/              # 유틸리티 스크립트
+│   └── start.sh          # 애플리케이션 시작 스크립트
+├── data/                 # 데이터베이스 파일 (볼륨)
+└── logs/                 # 로그 파일
+```
+
+## 🚀 빠른 시작
 
 ### 1. GitHub OAuth 앱 생성
 
-1. [GitHub Developer Settings](https://github.com/settings/developers)로 이동
-2. "New OAuth App" 클릭
-3. 다음 정보 입력:
-   - **Application name**: GitHub 추천 시스템 (또는 원하는 이름)
-   - **Homepage URL**: `http://localhost:3000`
-   - **Authorization callback URL**: `http://localhost:3000/auth/github/callback`
-4. "Register application" 클릭
-5. **Client ID**와 **Client Secret**을 메모
+1. [GitHub Developer Settings](https://github.com/settings/developers)에서 "New OAuth App" 클릭
+2. 다음 정보 입력:
+   - **Application name**: GitHub 추천 시스템
+   - **Homepage URL**: `http://localhost:3000` (로컬) 또는 `https://yourdomain.com` (프로덕션)
+   - **Authorization callback URL**: `http://localhost:3000/auth/github/callback` (로컬) 또는 `https://yourdomain.com/auth/github/callback` (프로덕션)
+3. **Client ID**와 **Client Secret** 복사
+
+> ⚠️ **중요**: GitHub OAuth 앱의 콜백 URL은 `.env` 파일의 `CALLBACK_URL`과 **완전히 동일**해야 합니다. 프로덕션에서는 `https://$DOMAIN/auth/github/callback` 형태여야 합니다.
 
 ### 2. 환경 변수 설정
 
-프로젝트 루트에 `.env` 파일을 생성하고 다음 내용을 입력:
+프로젝트 루트에 `.env` 파일 생성:
 
 ```env
-# GitHub OAuth Configuration
+# GitHub OAuth 설정
 GITHUB_CLIENT_ID=your_github_client_id_here
 GITHUB_CLIENT_SECRET=your_github_client_secret_here
 
-# Server Configuration
+# 서버 설정
 PORT=3000
 CALLBACK_URL=http://localhost:3000/auth/github/callback
+
+# 세션 설정
+SESSION_SECRET=your_random_session_secret_here
+
+# 데이터베이스 설정
+REFERRALS_DATA_DIR=/app/data
+REFERRALS_DB_PATH=/app/data/referrals.db
+
+# 아바타 설정 (선택사항)
+AVATAR_ENABLE=true
+AVATAR_TIMEOUT_MS=5000
+AVATAR_CONCURRENCY=2
+
+# 캐시 설정
+SVG_CACHE_TTL_MS=600000
+
+# 환경 설정
+NODE_ENV=production
+
+# 도메인 설정 (프로덕션)
+DOMAIN=yourdomain.com
 ```
 
-### 3. 의존성 설치 및 실행
+### 3. 로컬 개발 환경
 
 ```bash
 # 의존성 설치
 npm install
 
-# 서버 실행
-npm start
-
-# 개발 모드로 실행 (nodemon 필요)
+# 개발 서버 실행
 npm run dev
+
+# 또는 프로덕션 모드
+npm start
 ```
 
 서버가 `http://localhost:3000`에서 실행됩니다.
 
-## Docker를 이용한 배포
+### 4. Docker를 이용한 배포
 
-### 1. 초기 설정 (오픈소스 배포용)
+#### 도메인 설정
+Docker Compose 배포 시 Caddy가 자동으로 SSL 인증서를 발급받으려면 도메인 설정이 필요합니다:
 
-이 프로젝트는 오픈소스로 공개되어 있으며, 처음 실행할 때 자동으로 데이터베이스가 초기화됩니다.
-
-**중요**: `referrals.db` 파일이 없어도 자동으로 생성되므로 별도의 데이터베이스 설정이 필요하지 않습니다.
-
-### 2. Caddy 설정
-
-작성중...
-
-### 3. 환경 변수 설정
-
-`.env` 파일에 다음 내용을 추가:
-
-```env
-# GitHub OAuth Configuration
-GITHUB_CLIENT_ID=your_github_client_id_here
-GITHUB_CLIENT_SECRET=your_github_client_secret_here
-
-# Session Configuration
-SESSION_SECRET=your_random_session_secret_here
-
-# Server Configuration
-PORT=3000
-CALLBACK_URL=https://yourdomain.com/auth/github/callback
-
-# Cloudflare Tunnel Token
-CLOUDFLARE_TUNNEL_TOKEN=your_tunnel_token_here
-
-# Optional: Avatar settings
-AVATAR_ENABLE=true
-AVATAR_TIMEOUT_MS=5000
-AVATAR_CONCURRENCY=2
-SVG_CACHE_TTL_MS=600000
-NODE_ENV=production
-```
-
-### 4. Docker Compose로 실행
+1. **DNS 설정**: 도메인의 A/AAAA 레코드를 서버 IP로 설정
+2. **환경 변수**: `.env` 파일에 `DOMAIN=yourdomain.com` 설정
+3. **자동 전달**: Docker Compose가 `.env`의 `DOMAIN` 값을 Caddy 컨테이너의 환경변수로 전달
+   ```yaml
+   # docker-compose.yml에서 환경변수 전달
+   caddy:
+     environment:
+       - DOMAIN=${DOMAIN:?Set DOMAIN in .env (e.g., example.com)}
+   ```
+4. **Caddyfile 처리**: Caddy가 `{$DOMAIN}` 변수를 실제 도메인으로 치환하여 SSL 인증서 발급
 
 ```bash
 # 빌드 및 실행
@@ -116,42 +145,7 @@ docker-compose logs -f
 docker-compose down
 ```
 
-### (선택) 5. Cloudflare 연결
-
-작성 중...
-
-### 6. 데이터베이스 자동 초기화
-
-컨테이너가 처음 실행될 때 자동으로 다음 작업이 수행됩니다:
-
-1. **데이터베이스 파일 생성**: `referrals.db` 파일이 자동으로 생성됩니다
-2. **테이블 생성**: `users`와 `recommendations` 테이블이 자동으로 생성됩니다
-3. **인덱스 생성**: 성능 최적화를 위한 인덱스가 자동으로 생성됩니다
-4. **권한 설정**: 적절한 파일 권한이 자동으로 설정됩니다
-
-**주의사항**:
-- 기존 `referrals.db` 파일이 있다면 그대로 사용됩니다
-- 데이터베이스 파일은 Docker 볼륨에 저장되어 컨테이너 재시작 시에도 유지됩니다
-- 데이터를 완전히 초기화하려면 `docker-compose down -v`로 볼륨을 삭제한 후 다시 시작하세요
-
-## API 엔드포인트
-
-### 인증
-- `GET /auth/github` - GitHub 로그인
-- `GET /auth/github/callback` - OAuth 콜백
-- `GET /logout` - 로그아웃
-- `GET /api/user` - 현재 사용자 정보
-
-### 추천
-- `POST /api/recommend` - 사용자 추천
-  ```json
-  {
-    "recommendedUsername": "target-github-username"
-  }
-  ```
-- `GET /api/recommendations/:username` - 추천 목록 조회
-
-## 데이터베이스 스키마
+## 📊 데이터베이스 스키마
 
 ### users 테이블
 ```sql
@@ -177,7 +171,125 @@ CREATE TABLE recommendations (
 );
 ```
 
-## 라이선스
+## 🔌 API 엔드포인트
+
+### 인증 (인증 불필요)
+- `GET /auth/github` - GitHub 로그인
+- `GET /auth/github/callback` - OAuth 콜백
+- `GET /logout` - 로그아웃
+- `GET /api/user` - 현재 사용자 정보 (인증된 사용자만)
+
+### 추천 (인증 필요)
+- `POST /api/recommend` - 사용자 추천
+  - **인증**: GitHub OAuth 로그인 필수
+  - **입력 제한**: 
+    - `recommendedUsername`: 필수, 문자열
+    - `recommendationText`: 선택사항, 최대 500자
+  - **권한**: 본인만 추천 가능
+  ```json
+  {
+    "recommendedUsername": "target-github-username",
+    "recommendationText": "추천사 (선택사항, 최대 500자)"
+  }
+  ```
+
+### 추천 조회 및 관리
+- `GET /u/:username` - 받은 추천사 목록을 SVG 형식으로 반환 (인증 불필요)
+  - **용도**: GitHub 등에 첨부 가능한 이미지 형식
+  - **캐싱**: 5분 TTL, Cloudflare CDN 캐시
+  
+- `GET /t/:username` - 추천 페이지 (인증 불필요)
+  - **용도**: 특정 사용자에 대한 추천 페이지
+
+- `GET /u/:username/admin` - 추천사 관리 페이지 (인증 + 권한 필요)
+  - **인증**: GitHub OAuth 로그인 필수
+  - **권한**: URL의 `:username`과 로그인한 사용자명이 일치해야 함
+  - **접근 제한**: 본인의 관리 페이지만 접근 가능
+
+- `GET /api/received-recommendations/:username` - 받은 추천사 목록을 JSON 형식으로 반환 (인증 + 권한 필요)
+  - **인증**: GitHub OAuth 로그인 필수
+  - **권한**: URL의 `:username`과 로그인한 사용자명이 일치해야 함
+  - **응답**: 추천사 ID, 내용, 공개여부, 작성자 정보 포함
+
+- `POST /api/toggle-recommendation-visibility` - 추천사 공개/비공개 설정 (인증 + 권한 필요)
+  - **인증**: GitHub OAuth 로그인 필수
+  - **권한**: 본인이 받은 추천사만 수정 가능
+  - **입력 제한**:
+    - `recommendationId`: 필수, 정수
+    - `isVisible`: 필수, boolean
+  - **보안**: 추천사 소유권 검증 후 수정 허용
+
+### 기타
+- `GET /health` - 헬스 체크 (인증 불필요)
+- `GET /renderer-test` - SVG 렌더러 테스트 (개발 모드에서만 동작, 인증 불필요)
+
+### 보안 및 제한사항
+- **인증 방식**: GitHub OAuth 2.0 + 세션 기반
+- **권한 검증**: 사용자명 대소문자 구분 없이 비교
+- **입력 검증**: 
+  - 추천사 텍스트 최대 500자 제한
+  - SQL 인젝션 방지를 위한 Prepared Statements 사용
+- **XSS 방지**: HTML 이스케이프 처리
+- **CSRF 보호**: 세션 기반 인증 + SameSite 쿠키
+- **레이트 리미팅**: 현재 구현되지 않음 (추후 추가 권장)
+
+## 🎨 SVG 배지 기능
+
+- **동적 생성**: 실시간으로 추천 정보를 SVG로 렌더링
+- **아바타 표시**: GitHub 아바타 이미지를 Base64로 인라인 삽입
+- **다중 라인 텍스트**: 긴 추천사를 여러 줄로 자동 분할
+- **캐싱**: 메모리 캐시와 Cloudflare CDN 캐싱으로 성능 최적화
+- **304 Not Modified**: 클라이언트 캐시 지원
+
+## 🔧 고급 설정
+
+### 개발 모드
+- GitHub OAuth 설정이 없으면 로컬 로그인 모드로 전환
+- `/local-login` 페이지에서 임의 사용자명으로 로그인 가능
+
+### 프로덕션 모드
+- GitHub OAuth 필수
+- 로컬 로그인 비활성화
+- Cloudflare 캐싱 최적화
+
+### 데이터베이스 마이그레이션
+- 자동 마이그레이션 지원
+- 기존 데이터 보존하면서 스키마 업데이트
+- 롤백 가능한 안전한 마이그레이션
+
+## 🚀 배포
+
+### Docker Compose 배포
+1. `.env` 파일 설정
+2. `docker-compose up -d` 실행
+3. Caddy가 자동으로 SSL 인증서 발급
+
+### 수동 배포
+1. Node.js 환경에서 `npm install` 실행
+2. 데이터베이스 초기화: `sqlite3 referrals.db < schema/init.sql`
+3. `npm start`로 서버 실행
+
+## 🔒 보안 기능
+
+- **XSS 방지**: HTML 이스케이프 처리
+- **CSRF 보호**: CSRF 토큰(또는 Origin/Referer 검증) + SameSite=Lax 쿠키
+  - 변경사항: POST/PUT/DELETE 요청에 CSRF 토큰 검증을 적용하거나, 최소한 Origin/Referer 검증을 문서화하세요.
+- **SQL 인젝션 방지**: Prepared statements 사용
+- **파일 권한**: 데이터베이스 파일 보안 권한 설정
+- **헤더 보안**: Caddy를 통한 보안 헤더 설정
+
+## 📝 라이선스
 
 이 프로젝트는 MIT 라이선스를 따릅니다.
 
+## 🤝 기여하기
+
+1. 프로젝트를 Fork하세요
+2. 기능 브랜치를 생성하세요 (`git checkout -b feature/새로운기능`)
+3. 변경사항을 커밋하세요 (`git commit -m '새로운 기능 추가'`)
+4. 브랜치에 푸시하세요 (`git push origin feature/새로운기능`)
+5. Pull Request를 생성하세요
+
+## 📞 지원
+
+문제가 발생하거나 질문이 있으시면 GitHub Issues를 통해 문의해주세요.
