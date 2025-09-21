@@ -25,7 +25,6 @@ services:
       retries: 3
       start_period: 10s
 
-  services:
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
