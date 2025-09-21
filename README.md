@@ -222,7 +222,8 @@ CREATE TABLE recommendations (
 ## 🔒 보안 기능
 
 - **XSS 방지**: HTML 이스케이프 처리
-- **CSRF 보호**: 세션 기반 인증
+- **CSRF 보호**: CSRF 토큰(또는 Origin/Referer 검증) + SameSite=Lax 쿠키
+  - 변경사항: POST/PUT/DELETE 요청에 CSRF 토큰 검증을 적용하거나, 최소한 Origin/Referer 검증을 문서화하세요.
 - **SQL 인젝션 방지**: Prepared statements 사용
 - **파일 권한**: 데이터베이스 파일 보안 권한 설정
 - **헤더 보안**: Caddy를 통한 보안 헤더 설정
