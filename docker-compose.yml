@@ -29,7 +29,7 @@ services:
     image: caddy:2-alpine
     restart: unless-stopped
     environment:
-      - DOMAIN=${DOMAIN}
+      - DOMAIN=${DOMAIN:?Set DOMAIN in .env (e.g., example.com)}
     ports:
       - "80:80"
       - "443:443"
