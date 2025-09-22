@@ -222,21 +222,39 @@ app.post('/api/recommend', (req, res) => {
 
     // Add recommendation (duplicate recommendations are now allowed)
     // First get the next position for this user (highest position + 1)
-    db.get(`SELECT COALESCE(MAX(position), -1) + 1 as next_position 
-            FROM recommendations 
-            WHERE LOWER(recommended_username) = LOWER(?)`,
-      [recommendedUsername], (err, positionRow) => {
-      if (err) {
-        console.error('Database error when getting next position:', err);
-        return res.status(500).json({ error: 'Failed to get position for recommendation' });
-      }
-      
-      const nextPosition = positionRow.next_position;
-      
-      db.run(`INSERT INTO recommendations (recommender_id, recommended_username, recommendation_text, position)
-              VALUES (?, ?, ?, ?)`,
-        [user.id, recommendedUsername, recommendationText || null, nextPosition], function(err) {
-      if (err) {
+    db.serialize(() => {
+      db.run('BEGIN IMMEDIATE');
+      db.get(
+        `SELECT COALESCE(MAX(position), -1) + 1 AS next_position
+           FROM recommendations
+          WHERE recommended_username = ? COLLATE NOCASE`,
+        [recommendedUsername],
+        (err, positionRow) => {
+          if (err) {
+            db.run('ROLLBACK');
+            return res.status(500).json({ error: 'Failed to get position for recommendation' });
+          }
+          const nextPosition = positionRow.next_position;
+          db.run(
+            `INSERT INTO recommendations (recommender_id, recommended_username, recommendation_text, position)
+             VALUES (?, ?, ?, ?)`,
+            [user.id, recommendedUsername, recommendationText || null, nextPosition],
+            (err) => {
+              if (err) {
+                db.run('ROLLBACK');
+                return res.status(500).json({ error: 'Failed to save recommendation' });
+              }
+              db.run('COMMIT', (commitErr) => {
+                if (commitErr) return res.status(500).json({ error: 'Failed to commit recommendation' });
+                svgCache.delete(recommendedUsername.toLowerCase());
+                console.log(`[${recommendedUsername}] Cache invalidated after new recommendation`);
+                res.json({ success: true, message: 'Recommendation added successfully' });
+              });
+            }
+          );
+        }
+      );
+    });
         console.error('Database error when saving recommendation:', err);
         console.error('User id:', user.id);
         console.error('Recommended username:', recommendedUsername);
