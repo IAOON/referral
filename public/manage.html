@@ -122,6 +122,38 @@
             align-items: center;
         }
 
+        .position-controls {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .position-btn {
+            background: #0366d6;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 6px 12px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: background 0.2s;
+        }
+
+        .position-btn:hover {
+            background: #0251a3;
+        }
+
+        .position-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        .position-info {
+            font-size: 0.8rem;
+            color: #666;
+            margin-right: 8px;
+        }
+
         .visibility-toggle {
             display: flex;
             align-items: center;
@@ -214,6 +246,12 @@
                 gap: 15px;
             }
 
+            .position-controls {
+                width: 100%;
+                justify-content: space-between;
+                margin-bottom: 10px;
+            }
+
             .visibility-toggle {
                 width: 100%;
                 justify-content: space-between;
@@ -290,7 +328,7 @@
                 return;
             }
 
-            container.innerHTML = recommendations.map(rec => `
+            container.innerHTML = recommendations.map((rec, index) => `
                 <div class="recommendation-item ${rec.is_visible ? '' : 'hidden'}">
                     <div class="recommendation-header">
                         <div class="recommendation-user">@${escapeHtml(rec.recommender_username)} (${escapeHtml(rec.recommender_name || rec.recommender_username)})</div>
@@ -298,6 +336,19 @@
                     </div>
                     <div class="recommendation-text">${escapeHtml(rec.recommendation_text || '추천사 텍스트가 없습니다.')}</div>
                     <div class="recommendation-actions">
+                        <div class="position-controls">
+                            <span class="position-info">순서: ${index + 1}</span>
+                            <button class="position-btn" 
+                                    onclick="moveRecommendation(${rec.id}, 'up')" 
+                                    ${rec.position === 0 ? 'disabled' : ''}>
+                                ↑ 위로
+                            </button>
+                            <button class="position-btn" 
+                                    onclick="moveRecommendation(${rec.id}, 'down')" 
+                                    ${rec.position === recommendations.length - 1 ? 'disabled' : ''}>
+                                ↓ 아래로
+                            </button>
+                        </div>
                         <div class="visibility-toggle">
                             <span class="visibility-label">표시</span>
                             <div class="toggle-switch ${rec.is_visible ? 'active' : ''}" 
@@ -311,6 +362,35 @@
                     </div>
                 </div>
             `).join('');
+        }
+
+        // 추천사 위치 이동
+        async function moveRecommendation(id, direction) {
+            try {
+                const response = await fetch('/api/move-recommendation', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        recommendationId: id,
+                        direction: direction
+                    })
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || 'Failed to move recommendation');
+                }
+
+                // 추천사 목록 다시 로드
+                await loadRecommendations();
+                showMessage(`추천사가 ${direction === 'up' ? '위로' : '아래로'} 이동되었습니다.`, 'success');
+                
+            } catch (error) {
+                console.error('Error moving recommendation:', error);
+                showMessage(`위치 이동 중 오류가 발생했습니다: ${error.message}`, 'error');
+            }
         }
 
         // 표시/숨김 토글

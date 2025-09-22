@@ -221,9 +221,21 @@ app.post('/api/recommend', (req, res) => {
     }
 
     // Add recommendation (duplicate recommendations are now allowed)
-    db.run(`INSERT INTO recommendations (recommender_id, recommended_username, recommendation_text)
-            VALUES (?, ?, ?)`,
-      [user.id, recommendedUsername, recommendationText || null], function(err) {
+    // First get the next position for this user
+    db.get(`SELECT COALESCE(MAX(position), -1) + 1 as next_position 
+            FROM recommendations 
+            WHERE LOWER(recommended_username) = LOWER(?)`,
+      [recommendedUsername], (err, positionRow) => {
+      if (err) {
+        console.error('Database error when getting next position:', err);
+        return res.status(500).json({ error: 'Failed to get position for recommendation' });
+      }
+      
+      const nextPosition = positionRow.next_position;
+      
+      db.run(`INSERT INTO recommendations (recommender_id, recommended_username, recommendation_text, position)
+              VALUES (?, ?, ?, ?)`,
+        [user.id, recommendedUsername, recommendationText || null, nextPosition], function(err) {
       if (err) {
         console.error('Database error when saving recommendation:', err);
         console.error('User id:', user.id);
@@ -237,6 +249,7 @@ app.post('/api/recommend', (req, res) => {
       console.log(`[${recommendedUsername}] Cache invalidated after new recommendation`);
       
       res.json({ success: true, message: 'Recommendation added successfully' });
+      });
     });
   });
 });
@@ -722,10 +735,13 @@ app.get('/u/:username', async (req, res) => {
 async function generateSVGForUserWithMetadata(username) {
   return new Promise((resolve, reject) => {
     db.all(`SELECT u.username, u.name, r.created_at, r.recommendation_text
-            FROM recommendations r
+            FROM (
+              SELECT r.*, ROW_NUMBER() OVER (ORDER BY r.position ASC) as display_order
+              FROM recommendations r
+              WHERE LOWER(r.recommended_username) = LOWER(?) AND r.is_visible = 1
+            ) r
             LEFT JOIN users u ON r.recommender_id = u.id
-            WHERE LOWER(r.recommended_username) = LOWER(?) AND r.is_visible = 1
-            ORDER BY r.created_at DESC`,
+            ORDER BY r.display_order ASC`,
       [username], async (err, rows) => {
       if (err) {
         console.error(`[${username}] Database error:`, err);
@@ -865,12 +881,12 @@ app.get('/api/received-recommendations/:username', (req, res) => {
     return res.status(403).json({ error: 'Access denied' });
   }
 
-  db.all(`SELECT r.id, r.recommendation_text, r.is_visible, r.created_at,
+  db.all(`SELECT r.id, r.recommendation_text, r.is_visible, r.position, r.created_at,
                  u.username as recommender_username, u.name as recommender_name
           FROM recommendations r
           LEFT JOIN users u ON r.recommender_id = u.id
           WHERE LOWER(r.recommended_username) = LOWER(?)
-          ORDER BY r.created_at DESC`,
+          ORDER BY r.position ASC, r.created_at DESC`,
     [username], (err, rows) => {
     if (err) {
       return res.status(500).json({ error: 'Database error' });
@@ -918,6 +934,93 @@ app.post('/api/toggle-recommendation-visibility', (req, res) => {
       }
 
       res.json({ success: true, message: 'Recommendation visibility updated' });
+    });
+  });
+});
+
+// Move recommendation position (up or down)
+app.post('/api/move-recommendation', (req, res) => {
+  if (!req.isAuthenticated()) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+
+  const { recommendationId, direction } = req.body;
+
+  if (!recommendationId || !direction || !['up', 'down'].includes(direction)) {
+    return res.status(400).json({ error: 'Invalid parameters' });
+  }
+
+  // Verify the recommendation is for the authenticated user
+  db.get(`SELECT id, position, recommended_username FROM recommendations 
+          WHERE id = ? AND LOWER(recommended_username) = LOWER(?)`,
+    [recommendationId, req.user.username], (err, currentRow) => {
+    if (err) {
+      return res.status(500).json({ error: 'Database error' });
+    }
+
+    if (!currentRow) {
+      return res.status(404).json({ error: 'Recommendation not found or not authorized' });
+    }
+
+    const currentPosition = currentRow.position;
+
+    console.log(`[DEBUG] Moving recommendation ${recommendationId}: current=${currentPosition}, direction=${direction}`);
+
+    // Find the next/previous recommendation by position
+    const positionCondition = direction === 'up' 
+      ? `position < ${currentPosition} ORDER BY position DESC LIMIT 1`
+      : `position > ${currentPosition} ORDER BY position ASC LIMIT 1`;
+
+    db.get(`SELECT id, position FROM recommendations 
+            WHERE LOWER(recommended_username) = LOWER(?) AND ${positionCondition}`,
+      [req.user.username], (err, targetRow) => {
+      if (err) {
+        console.log(`[DEBUG] Database error when finding target recommendation:`, err);
+        return res.status(500).json({ error: 'Database error' });
+      }
+
+      if (!targetRow) {
+        console.log(`[DEBUG] No recommendation found ${direction === 'up' ? 'above' : 'below'} position ${currentPosition} for user ${req.user.username}`);
+        return res.status(400).json({ error: `Cannot move recommendation - no recommendation found ${direction === 'up' ? 'above' : 'below'} this one` });
+      }
+
+      const targetPosition = targetRow.position;
+      console.log(`[DEBUG] Found target recommendation ${targetRow.id} at position ${targetPosition}`);
+
+      // Start transaction to swap positions
+      db.serialize(() => {
+        db.run('BEGIN TRANSACTION');
+
+        // Swap positions
+        db.run(`UPDATE recommendations SET position = ? WHERE id = ?`,
+          [targetPosition, recommendationId], (err) => {
+          if (err) {
+            db.run('ROLLBACK');
+            return res.status(500).json({ error: 'Failed to update recommendation position' });
+          }
+        });
+
+        db.run(`UPDATE recommendations SET position = ? WHERE id = ?`,
+          [currentPosition, targetRow.id], (err) => {
+          if (err) {
+            db.run('ROLLBACK');
+            return res.status(500).json({ error: 'Failed to update recommendation position' });
+          }
+        });
+
+        db.run('COMMIT', (err) => {
+          if (err) {
+            return res.status(500).json({ error: 'Failed to commit position changes' });
+          }
+
+          // 캐시 무효화
+          const cacheKey = req.user.username.toLowerCase();
+          svgCache.delete(cacheKey);
+          console.log(`[${cacheKey}] Cache invalidated after position change`);
+
+          res.json({ success: true, message: 'Recommendation position updated' });
+        });
+      });
     });
   });
 });

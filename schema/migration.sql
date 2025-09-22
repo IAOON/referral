@@ -61,17 +61,21 @@ CREATE TABLE recommendations (
     recommended_username TEXT NOT NULL COLLATE NOCASE,
     recommendation_text TEXT,
     is_visible INTEGER NOT NULL DEFAULT 1 CHECK (is_visible IN (0, 1)),
+    position INTEGER NOT NULL DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (recommender_id) REFERENCES users(id) ON UPDATE CASCADE ON DELETE CASCADE
 );
 
--- Step 6: Restore data from backup
-INSERT INTO recommendations 
-SELECT * FROM recommendations_backup;
+-- Step 6: Restore data from backup with position values
+INSERT INTO recommendations (id, recommender_id, recommended_username, recommendation_text, is_visible, created_at, position)
+SELECT id, recommender_id, recommended_username, recommendation_text, is_visible, created_at, 
+       ROW_NUMBER() OVER (ORDER BY created_at) - 1 as position
+FROM recommendations_backup;
 
 -- Step 7: Recreate indexes for the new table
 CREATE INDEX IF NOT EXISTS idx_recommendations_recommended_username ON recommendations(recommended_username);
 CREATE INDEX IF NOT EXISTS idx_recommendations_recommender_id ON recommendations(recommender_id);
+CREATE INDEX IF NOT EXISTS idx_recommendations_position ON recommendations(position);
 
 -- Step 8: Clean up backup table
 DROP TABLE IF EXISTS recommendations_backup;
