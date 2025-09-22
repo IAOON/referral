@@ -68,10 +68,13 @@ CREATE TABLE recommendations (
 
 -- Step 6: Restore data from backup with position values
 INSERT INTO recommendations (id, recommender_id, recommended_username, recommendation_text, is_visible, created_at, position)
-SELECT id, recommender_id, recommended_username, recommendation_text, is_visible, created_at, 
-       ROW_NUMBER() OVER (ORDER BY created_at) - 1 as position
+SELECT
+  id, recommender_id, recommended_username, recommendation_text, is_visible, created_at,
+  ROW_NUMBER() OVER (
+    PARTITION BY recommended_username
+    ORDER BY created_at, id
+  ) - 1 AS position
 FROM recommendations_backup;
-
 -- Step 7: Recreate indexes for the new table
 CREATE INDEX IF NOT EXISTS idx_recommendations_recommended_username ON recommendations(recommended_username);
 CREATE INDEX IF NOT EXISTS idx_recommendations_recommender_id ON recommendations(recommender_id);
