@@ -1007,36 +1007,32 @@ app.post('/api/move-recommendation', (req, res) => {
 
       // Start transaction to swap positions
       db.serialize(() => {
-        db.run('BEGIN TRANSACTION');
-
-        // Swap positions
-        db.run(`UPDATE recommendations SET position = ? WHERE id = ?`,
-          [targetPosition, recommendationId], (err) => {
-          if (err) {
-            db.run('ROLLBACK');
-            return res.status(500).json({ error: 'Failed to update recommendation position' });
-          }
-        });
-
-        db.run(`UPDATE recommendations SET position = ? WHERE id = ?`,
-          [currentPosition, targetRow.id], (err) => {
-          if (err) {
-            db.run('ROLLBACK');
-            return res.status(500).json({ error: 'Failed to update recommendation position' });
-          }
-        });
-
-        db.run('COMMIT', (err) => {
-          if (err) {
-            return res.status(500).json({ error: 'Failed to commit position changes' });
-          }
-
-          // 캐시 무효화
-          const cacheKey = req.user.username.toLowerCase();
-          svgCache.delete(cacheKey);
-          console.log(`[${cacheKey}] Cache invalidated after position change`);
-
-          res.json({ success: true, message: 'Recommendation position updated' });
+        const rollback = (msg) =>
+          db.run('ROLLBACK', () => res.status(500).json({ error: msg }));
+        db.run('BEGIN IMMEDIATE', (err) => {
+          if (err) return rollback('Failed to begin transaction');
+          db.run(
+            `UPDATE recommendations SET position = ? WHERE id = ?`,
+            [targetPosition, recommendationId],
+            (err) => {
+              if (err) return rollback('Failed to update recommendation position (A)');
+              db.run(
+                `UPDATE recommendations SET position = ? WHERE id = ?`,
+                [currentPosition, targetRow.id],
+                (err) => {
+                  if (err) return rollback('Failed to update recommendation position (B)');
+                  db.run('COMMIT', (err) => {
+                    if (err) return rollback('Failed to commit position changes');
+                    // 캐시 무효화
+                    const cacheKey = req.user.username.toLowerCase();
+                    svgCache.delete(cacheKey);
+                    console.log(`[${cacheKey}] Cache invalidated after position change`);
+                    res.json({ success: true, message: 'Recommendation position updated' });
+                  });
+                }
+              );
+            }
+          );
         });
       });
     });
