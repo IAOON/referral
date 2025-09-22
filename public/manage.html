@@ -340,12 +340,12 @@
                             <span class="position-info">순서: ${index + 1}</span>
                             <button class="position-btn" 
                                     onclick="moveRecommendation(${rec.id}, 'up')" 
-                                    ${rec.position === 0 ? 'disabled' : ''}>
+                                    ${index === 0 ? 'disabled' : ''}>
                                 ↑ 위로
                             </button>
                             <button class="position-btn" 
                                     onclick="moveRecommendation(${rec.id}, 'down')" 
-                                    ${rec.position === recommendations.length - 1 ? 'disabled' : ''}>
+                                    ${index === recommendations.length - 1 ? 'disabled' : ''}>
                                 ↓ 아래로
                             </button>
                         </div>

@@ -221,7 +221,7 @@ app.post('/api/recommend', (req, res) => {
     }
 
     // Add recommendation (duplicate recommendations are now allowed)
-    // First get the next position for this user
+    // First get the next position for this user (highest position + 1)
     db.get(`SELECT COALESCE(MAX(position), -1) + 1 as next_position 
             FROM recommendations 
             WHERE LOWER(recommended_username) = LOWER(?)`,
@@ -736,7 +736,7 @@ async function generateSVGForUserWithMetadata(username) {
   return new Promise((resolve, reject) => {
     db.all(`SELECT u.username, u.name, r.created_at, r.recommendation_text
             FROM (
-              SELECT r.*, ROW_NUMBER() OVER (ORDER BY r.position ASC) as display_order
+              SELECT r.*, ROW_NUMBER() OVER (ORDER BY r.position DESC) as display_order
               FROM recommendations r
               WHERE LOWER(r.recommended_username) = LOWER(?) AND r.is_visible = 1
             ) r
@@ -886,7 +886,7 @@ app.get('/api/received-recommendations/:username', (req, res) => {
           FROM recommendations r
           LEFT JOIN users u ON r.recommender_id = u.id
           WHERE LOWER(r.recommended_username) = LOWER(?)
-          ORDER BY r.position ASC, r.created_at DESC`,
+          ORDER BY r.position DESC, r.created_at DESC`,
     [username], (err, rows) => {
     if (err) {
       return res.status(500).json({ error: 'Database error' });
@@ -966,10 +966,10 @@ app.post('/api/move-recommendation', (req, res) => {
 
     console.log(`[DEBUG] Moving recommendation ${recommendationId}: current=${currentPosition}, direction=${direction}`);
 
-    // Find the next/previous recommendation by position
+    // Find the next/previous recommendation by position (higher position = higher in list)
     const positionCondition = direction === 'up' 
-      ? `position < ${currentPosition} ORDER BY position DESC LIMIT 1`
-      : `position > ${currentPosition} ORDER BY position ASC LIMIT 1`;
+      ? `position > ${currentPosition} ORDER BY position ASC LIMIT 1`
+      : `position < ${currentPosition} ORDER BY position DESC LIMIT 1`;
 
     db.get(`SELECT id, position FROM recommendations 
             WHERE LOWER(recommended_username) = LOWER(?) AND ${positionCondition}`,
