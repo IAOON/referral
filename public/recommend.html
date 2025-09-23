@@ -114,6 +114,77 @@
         .back-link:hover {
             text-decoration: underline;
         }
+
+        /* 로딩 스피너 스타일 */
+        .loading-spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #007bff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 8px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* 버튼 상태별 스타일 */
+        button.loading {
+            opacity: 0.7;
+            cursor: not-allowed;
+        }
+
+        button.success {
+            background-color: #28a745 !important;
+            border-color: #28a745 !important;
+            color: white !important;
+            animation: successPulse 0.6s ease-in-out;
+        }
+
+        button.error {
+            background-color: #dc3545 !important;
+            border-color: #dc3545 !important;
+            color: white !important;
+            animation: errorShake 0.6s ease-in-out;
+        }
+
+        @keyframes successPulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+
+        @keyframes errorShake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-5px); }
+            75% { transform: translateX(5px); }
+        }
+
+        /* 메시지 스타일 개선 */
+        .message {
+            font-size: 16px;
+            font-weight: 500;
+            padding: 15px 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin: 20px 0;
+            animation: messageSlideIn 0.3s ease-out;
+        }
+
+        @keyframes messageSlideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
     </style>
 </head>
 <body>
@@ -137,6 +208,8 @@
                 <!-- Target user info will be populated here -->
             </div>
 
+            <div id="message"></div>
+
             <div class="recommend-form">
                 <h3>추천사 작성</h3>
                 <p>이 개발자를 추천하는 이유를 적어주세요:</p>
@@ -144,8 +217,6 @@
                 <br>
                 <button id="recommend-btn" onclick="submitRecommendation()">추천사 제출하기</button>
             </div>
-
-            <div id="message"></div>
         </div>
     </div>
 
@@ -275,8 +346,10 @@
                 return;
             }
 
+            // 버튼 상태 변경 및 로딩 표시
             recommendBtn.disabled = true;
-            recommendBtn.textContent = '제출 중...';
+            recommendBtn.innerHTML = '<span class="loading-spinner"></span> 제출 중...';
+            recommendBtn.classList.add('loading');
 
             try {
                 const response = await fetch('/api/recommend', {
@@ -294,28 +367,49 @@
                 const data = await response.json();
 
                 if (response.ok) {
-                    showMessage('추천사가 성공적으로 제출되었습니다!', 'success');
+                    showMessage('✅ 추천사가 성공적으로 제출되었습니다!', 'success');
+                    // 폼 초기화
                     document.getElementById('recommend-text').value = '';
-                    recommendBtn.textContent = '추천사 제출하기';
+                    // 성공 애니메이션
+                    recommendBtn.innerHTML = '✅ 제출 완료!';
+                    recommendBtn.classList.add('success');
+                    setTimeout(() => {
+                        recommendBtn.innerHTML = '추천사 제출하기';
+                        recommendBtn.classList.remove('success');
+                    }, 2000);
                 } else {
-                    showMessage(data.error || '추천사 제출에 실패했습니다.', 'error');
-                    recommendBtn.textContent = '추천사 제출하기';
+                    showMessage('❌ ' + (data.error || '추천사 제출에 실패했습니다.'), 'error');
+                    recommendBtn.innerHTML = '❌ 제출 실패';
+                    recommendBtn.classList.add('error');
+                    setTimeout(() => {
+                        recommendBtn.innerHTML = '추천사 제출하기';
+                        recommendBtn.classList.remove('error');
+                    }, 2000);
                 }
             } catch (error) {
                 console.error('Recommendation failed:', error);
-                showMessage('네트워크 오류가 발생했습니다.', 'error');
-                recommendBtn.textContent = '추천사 제출하기';
+                showMessage('❌ 네트워크 오류가 발생했습니다.', 'error');
+                recommendBtn.innerHTML = '❌ 네트워크 오류';
+                recommendBtn.classList.add('error');
+                setTimeout(() => {
+                    recommendBtn.innerHTML = '추천사 제출하기';
+                    recommendBtn.classList.remove('error');
+                }, 2000);
             } finally {
                 recommendBtn.disabled = false;
+                recommendBtn.classList.remove('loading');
             }
         }
 
         function showMessage(text, type) {
             const messageDiv = document.getElementById('message');
             messageDiv.innerHTML = `<div class="message ${escapeHtmlAttr(type)}">${escapeHtml(text)}</div>`;
+            
+            // 성공 메시지는 더 오래 표시
+            const duration = type === 'success' ? 8000 : 5000;
             setTimeout(() => {
                 messageDiv.innerHTML = '';
-            }, 5000);
+            }, duration);
         }
 
         async function logout() {
